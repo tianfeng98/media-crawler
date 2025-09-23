@@ -1,0 +1,118 @@
+import Ffmpeg from "fluent-ffmpeg";
+import { dayjs } from "./common";
+import { logger } from "./logger";
+
+const formatDurationStr = (duration: string) => {
+  // 'hh:mm:ss.SSS'
+  const [hh, mm, s] = duration.split(":");
+  const hours = parseInt(hh, 10);
+  const minutes = parseInt(mm, 10);
+  const [ss, SSS] = s.split(".");
+  const seconds = parseInt(ss, 10);
+  const milliseconds = parseInt(SSS, 10);
+  const result = dayjs.duration({
+    milliseconds,
+    seconds,
+    minutes,
+    hours,
+  });
+  return result.asMilliseconds();
+};
+
+export interface FFmpegProgressInfo {
+  input: string;
+  output: string;
+  /**
+   * 当前处理的媒体时长
+   */
+  currentTime: number;
+  /**
+   * 媒体的总时长
+   * 如果总时长未知，则为0
+   */
+  totalTime: number;
+}
+
+export interface FFmpegOptions {
+  userAgent?: string;
+  threads?: number;
+  headers?: Record<string, string>;
+  verbose?: boolean;
+  onProgress?: (progress: FFmpegProgressInfo) => void;
+}
+
+export const runFFmpeg = async (
+  input: string,
+  output: string,
+  { userAgent, threads, headers, verbose, onProgress }: FFmpegOptions = {}
+) => {
+  // 动态导入FFmpeg安装器
+  const ffmpegInstall = await import("@ffmpeg-installer/ffmpeg");
+  Ffmpeg.setFfmpegPath(ffmpegInstall.path);
+
+  return new Promise<FFmpegProgressInfo>((resolve, reject) => {
+    const command = Ffmpeg();
+    let totalTime = 0;
+
+    command.input(input);
+
+    if (userAgent) {
+      command.inputOptions("-user_agent", userAgent);
+    }
+
+    if (threads) {
+      command.inputOptions("-threads", threads.toString());
+    }
+
+    if (headers) {
+      command.inputOptions(
+        "-headers",
+        Object.entries(headers)
+          .map(([key, value]) => `${key}: ${value}`)
+          .join("$'\r\n'")
+      );
+    }
+    command
+      .inputOptions(
+        "-allowed_extensions",
+        "ALL",
+        "-protocol_whitelist",
+        "file,http,https,tls,tcp,crypto"
+      )
+      .outputOptions("-c", "copy")
+      .output(output)
+      .on("start", function (commandLine) {
+        logger.debug("Spawned FFmpeg with command: " + commandLine, {
+          verbose,
+        });
+      })
+      .on("progress", function (progress) {
+        const currentTime = formatDurationStr(progress.timemark);
+        if (totalTime && totalTime > 0) {
+          onProgress?.({
+            input,
+            output,
+            currentTime,
+            totalTime,
+          });
+        }
+      })
+      .on("codecData", function (data) {
+        totalTime = formatDurationStr(data.duration);
+      })
+      .on("end", function () {
+        const finishInfo: FFmpegProgressInfo = {
+          input,
+          output,
+          currentTime: totalTime,
+          totalTime,
+        };
+        onProgress?.(finishInfo);
+        resolve(finishInfo);
+      })
+      .on("error", function (err) {
+        reject(err);
+      })
+      .run();
+  });
+};
