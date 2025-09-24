@@ -1,6 +1,6 @@
 # syntax=docker.io/docker/dockerfile:1
 
-FROM node:20-alpine AS base
+FROM node:20-bookworm AS base
 
 # Install dependencies only when needed
 FROM base AS deps
@@ -10,20 +10,16 @@ WORKDIR /app
 
 ARG NPM_REGISTRY
 
-# Install dependencies based on the preferred package manager
-COPY package.json yarn.lock* package-lock.json* pnpm-lock.yaml* .npmrc* ./
-
 # 启用 corepack 并启用 pnpm
 RUN corepack enable && export COREPACK_NPM_REGISTRY=$NPM_REGISTRY && corepack prepare pnpm --activate
 
 RUN pnpm config set registry $NPM_REGISTRY
 
-RUN \
-  if [ -f yarn.lock ]; then yarn --frozen-lockfile; \
-  elif [ -f package-lock.json ]; then npm ci; \
-  elif [ -f pnpm-lock.yaml ]; then pnpm i --frozen-lockfile; \
-  else echo "Lockfile not found." && exit 1; \
-  fi
+# Install dependencies based on the preferred package manager
+COPY package.json yarn.lock* package-lock.json* pnpm-lock.yaml* .npmrc* ./
+
+# 安装依赖
+RUN pnpm install --frozen-lockfile
 
 
 # Rebuild the source code only when needed
@@ -37,12 +33,7 @@ COPY . .
 # Uncomment the following line in case you want to disable telemetry during the build.
 # ENV NEXT_TELEMETRY_DISABLED=1
 
-RUN \
-  if [ -f yarn.lock ]; then yarn run build; \
-  elif [ -f package-lock.json ]; then npm run build; \
-  elif [ -f pnpm-lock.yaml ]; then pnpm run build; \
-  else echo "Lockfile not found." && exit 1; \
-  fi
+RUN pnpm run build
 
 # Production image, copy all the files and run next
 FROM base AS runner
