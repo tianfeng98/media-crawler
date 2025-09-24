@@ -33,7 +33,8 @@ const downloadM3u8FromWebsite = async ({
     verbose,
   });
   // Setup
-  const browser = await chromium.launch({
+  const {PLAYWRIGHT_SERVER_ENDPOINT} = process.env;
+  const browser = PLAYWRIGHT_SERVER_ENDPOINT ? await chromium.connect(`ws://${PLAYWRIGHT_SERVER_ENDPOINT}`) : await chromium.launch({
     headless,
   });
   const context = await browser.newContext(

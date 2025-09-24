@@ -1,6 +1,7 @@
 import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
+  output: "standalone", 
   turbopack: {
     resolveAlias: {
       // 确保FFmpeg安装器被正确解析
