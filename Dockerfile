@@ -9,6 +9,16 @@ FROM base AS deps
 WORKDIR /app
 
 ARG NPM_REGISTRY
+ARG BINARY_MIRROR_URL
+
+ENV PLAYWRIGHT_DOWNLOAD_HOST=$BINARY_MIRROR_URL/playwright
+
+# 1. 替换Debian软件源为清华源
+RUN sed -i 's/deb.debian.org/mirrors.tuna.tsinghua.edu.cn/g' /etc/apt/sources.list && \
+    sed -i 's/security.debian.org/mirrors.tuna.tsinghua.edu.cn/g' /etc/apt/sources.list
+
+# 2. 更新软件包列表
+RUN apt-get update
 
 # 启用 corepack 并启用 pnpm
 RUN corepack enable && export COREPACK_NPM_REGISTRY=$NPM_REGISTRY && corepack prepare pnpm --activate

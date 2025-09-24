@@ -97,13 +97,10 @@ export async function GET(request: NextRequest) {
 }
 
 // 支持HEAD请求，用于获取文件信息
-export async function HEAD(
-  request: NextRequest,
-  { params }: { params: { id: string } }
-) {
+export async function HEAD(request: NextRequest) {
+  const { searchParams } = new URL(request.url);
+  const videoId = searchParams.get("id");
   try {
-    const videoId = params.id;
-
     if (!videoId) {
       return new NextResponse(null, { status: 400 });
     }
@@ -144,7 +141,7 @@ export async function HEAD(
       return new NextResponse(null, { status: 500 });
     }
   } catch (error) {
-    logger.error([`获取视频文件信息失败: ${params.id}`, error]);
+    logger.error([`获取视频文件信息失败: ${videoId}`, error]);
     return new NextResponse(null, { status: 500 });
   }
 }
