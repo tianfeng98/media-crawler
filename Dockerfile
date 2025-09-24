@@ -2,10 +2,13 @@
 
 FROM node:22 AS base
 
+WORKDIR /app
+
 ARG NPM_REGISTRY
 ARG BINARY_MIRROR_URL
 
 ENV PLAYWRIGHT_DOWNLOAD_HOST=https://npmmirror.com/mirrors/playwright
+ENV PLAYWRIGHT_BROWSERS_PATH=/app/browsers
 
 # 1. 替换Debian软件源为清华源
 RUN if [ -f /etc/apt/sources.list ]; then \
@@ -24,7 +27,6 @@ RUN apt-get update
 RUN corepack enable && export COREPACK_NPM_REGISTRY=$NPM_REGISTRY && corepack prepare pnpm --activate
 RUN pnpm config set registry $NPM_REGISTRY
 
-WORKDIR /app
 COPY . .
 
 # 安装依赖

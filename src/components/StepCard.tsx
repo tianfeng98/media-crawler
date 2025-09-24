@@ -6,7 +6,6 @@ import { Progress } from "@/components/ui/progress";
 import { StepStatus, TaskStatusEnum } from "@/lib/types";
 import { cn } from "@/lib/utils";
 import { AlertCircle, CheckCircle, Circle, Loader2 } from "lucide-react";
-import { useEffect } from "react";
 
 interface StepCardProps {
   step: StepStatus;
@@ -39,10 +38,6 @@ export function StepCard({ step, isActive, stepNumber }: StepCardProps) {
         return <Circle className="h-5 w-5 text-gray-400" />;
     }
   };
-
-  useEffect(() => {
-    console.log("step", step, step.progress);
-  }, [step]);
 
   const getStatusBadge = () => {
     switch (step.status) {
