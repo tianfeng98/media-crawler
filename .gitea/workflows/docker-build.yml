@@ -77,6 +77,7 @@ jobs:
           context: .
           build-args: |
             NPM_REGISTRY=${{ vars.NPM_REGISTRY }}
+            BINARY_MIRROR_URL=${{ vars.BINARY_MIRROR_URL }}
           file: ./Dockerfile
           push: true
           tags: |
