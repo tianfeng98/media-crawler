@@ -1,16 +1,17 @@
 import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
+  output: "standalone", 
   turbopack: {
     resolveAlias: {
       // 确保FFmpeg安装器被正确解析
       "@ffmpeg-installer/ffmpeg": "@ffmpeg-installer/ffmpeg",
     },
-    rules: {
+    rules: { 
       // 处理.node文件
       "*.node": {
         loaders: ["file-loader"],
-        as: "*.js",
+        as: "*.js", 
       },
     },
   },
