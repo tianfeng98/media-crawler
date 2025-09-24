@@ -1,0 +1,117 @@
+name: Docker Build and Deploy
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+    branches:
+      - main
+  timezone: Asia/Shanghai
+
+jobs:
+  buildx:
+    name: Build Docker image
+    runs-on: ubuntu-latest
+    continue-on-error: false # 任何步骤失败时停止整个工作流
+    strategy:
+      fail-fast: true # 快速失败策略
+
+    steps:
+      - name: Checkout code
+        uses: ${{ vars.GIT_MIRROR_URL }}/mirrors/checkout@v4
+
+      - name: Load BaseInfo
+        run: |
+          # 设置时区
+          sudo ln -sf /usr/share/zoneinfo/Asia/Shanghai /etc/localtime
+          echo "Asia/Shanghai" | sudo tee /etc/timezone
+          export TZ=Asia/Shanghai
+          echo "当前时间: $(date)"
+          echo "时区信息: $(cat /etc/timezone)"
+
+          # 加载项目信息
+          VERSION=$(jq -r '.version' package.json) 
+          IMAGE_NAME=$(jq -r '.name' package.json)
+          echo "VERSION=$VERSION" >> $GITEA_ENV
+          echo "IMAGE_NAME=$IMAGE_NAME" >> $GITEA_ENV
+          echo "项目名称: $IMAGE_NAME"
+          echo "当前版本: $VERSION"
+
+      - name: Set up Docker Buildx
+        uses: ${{ vars.GIT_MIRROR_URL }}/mirrors/setup-buildx-action@v3
+        with:
+          # name: buildx-common
+          buildkitd-config-inline: |
+            [registry."docker.io"]
+              mirrors = ["https://${{ vars.PROXY_REGISTRY_HOST }}"]
+
+      - name: Test registry connection
+        if: gitea.ref == 'refs/heads/main'
+        run: |
+          set -e  # 任何命令失败时立即退出
+
+          # 测试私有仓库连接
+          echo "测试私有仓库连接..."
+          TARGET_URL="https://${{ vars.LOCAL_REGISTRY_HOST }}/v2/_catalog"
+          echo "目标地址: $TARGET_URL"
+
+          response=$(curl -sf $TARGET_URL)
+          if [ $? -ne 0 ]; then
+            echo "错误: 无法连接到私有仓库"
+            exit 1
+          fi
+
+          if ! echo "$response" | grep -q "\"repositories\""; then
+            echo "错误: 私有仓库响应格式不正确"
+            echo "响应内容: $response"
+            exit 1
+          fi
+
+          echo "私有仓库连接正常"
+
+      - name: Build Docker image
+        if: gitea.ref == 'refs/heads/main'
+        uses: ${{ vars.GIT_MIRROR_URL }}/mirrors/build-push-action@v6
+        with:
+          context: .
+          build-args: |
+            NPM_REGISTRY=${{ vars.NPM_REGISTRY }}
+          file: ./Dockerfile
+          push: true
+          tags: |
+            ${{ vars.LOCAL_REGISTRY_HOST }}/${{ env.IMAGE_NAME }}:latest
+            ${{ vars.LOCAL_REGISTRY_HOST }}/${{ env.IMAGE_NAME }}:${{ env.VERSION }}
+          cache-from: type=registry,ref=${{ vars.LOCAL_REGISTRY_HOST }}/${{ env.IMAGE_NAME }}:buildcache
+          cache-to: type=registry,ref=${{ vars.LOCAL_REGISTRY_HOST }}/${{ env.IMAGE_NAME }}:buildcache
+          # platforms: linux/amd64,linux/arm64
+          platforms: linux/amd64
+          provenance: false
+          outputs: type=image,compression=gzip
+
+      - name: Verify push success
+        if: gitea.ref == 'refs/heads/main'
+        run: |
+          set -e  # 任何命令失败时立即退出
+
+          # 验证镜像是否成功推送到私有仓库
+          echo "验证推送结果..."
+
+          # 检查特定标签的镜像信息
+          echo "检查 latest 标签镜像..."
+          TARGET_URL="https://${{ vars.LOCAL_REGISTRY_HOST }}/v2/${{ env.IMAGE_NAME }}/tags/list"
+          echo "目标地址: $TARGET_URL"
+
+          response=$(curl -sf $TARGET_URL)
+          if [ $? -ne 0 ]; then
+            echo "错误: 无法获取镜像标签列表"
+            exit 1
+          fi
+
+          if ! echo "$response" | grep -q "\"latest\""; then
+            echo "错误: 未找到 latest 标签镜像"
+            echo "可用标签: $response"
+            exit 1
+          fi
+
+          echo "镜像推送验证完成"
