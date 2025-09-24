@@ -5,6 +5,21 @@ FROM node:22 AS base
 ARG NPM_REGISTRY
 ARG BINARY_MIRROR_URL
 
+ENV PLAYWRIGHT_DOWNLOAD_HOST=https://npmmirror.com/mirrors/playwright
+
+# 1. 替换Debian软件源为清华源
+RUN if [ -f /etc/apt/sources.list ]; then \
+        sed -i 's/deb.debian.org/mirrors.tuna.tsinghua.edu.cn/g' /etc/apt/sources.list && \
+        sed -i 's/security.debian.org/mirrors.tuna.tsinghua.edu.cn/g' /etc/apt/sources.list; \
+    fi && \
+    if [ -d /etc/apt/sources.list.d ]; then \
+        find /etc/apt/sources.list.d -name "*.list" -o -name "*.sources" | xargs sed -i 's/deb.debian.org/mirrors.tuna.tsinghua.edu.cn/g' && \
+        find /etc/apt/sources.list.d -name "*.list" -o -name "*.sources" | xargs sed -i 's/security.debian.org/mirrors.tuna.tsinghua.edu.cn/g'; \
+    fi
+
+# 2. 更新软件包列表
+RUN apt-get update
+
 # 启用 corepack 并启用 pnpm
 RUN corepack enable && export COREPACK_NPM_REGISTRY=$NPM_REGISTRY && corepack prepare pnpm --activate
 RUN pnpm config set registry $NPM_REGISTRY
