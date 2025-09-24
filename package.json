@@ -6,7 +6,7 @@
     "dev": "next dev --turbopack",
     "chromium-install": "pnpm dlx playwright install chromium-headless-shell --with-deps --no-shell",
     "ffmpeg-install": "node -e \"require('@ffmpeg-installer/ffmpeg')\"",
-    "binary-install": "pnpm run ffmpeg-install && pnpm run chromium-install",
+    "postinstall": "pnpm run ffmpeg-install && pnpm run chromium-install",
     "build": "next build --turbopack",
     "start": "next start",
     "commit": "cz"
