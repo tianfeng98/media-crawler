@@ -3,7 +3,7 @@
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent } from "@/components/ui/card";
 import { Progress } from "@/components/ui/progress";
-import { StepStatus, TaskStatusEnum } from "@/lib/types";
+import { StepStatus, TaskStatusEnum, TaskStepEnum } from "@/lib/types";
 import { cn } from "@/lib/utils";
 import { AlertCircle, CheckCircle, Circle, Loader2 } from "lucide-react";
 
@@ -14,15 +14,15 @@ interface StepCardProps {
 }
 
 const stepIcons = {
-  extract: "🔍",
-  download: "⬇️",
-  convert: "🔄",
+  [TaskStepEnum.Extract]: "🔍",
+  [TaskStepEnum.Download]: "⬇️",
+  [TaskStepEnum.Convert]: "🔄",
 };
 
 const stepTitles = {
-  extract: "提取视频链接",
-  download: "下载视频",
-  convert: "格式转换",
+  [TaskStepEnum.Extract]: "提取视频链接",
+  [TaskStepEnum.Download]: "下载视频",
+  [TaskStepEnum.Convert]: "格式转换",
 };
 
 export function StepCard({ step, isActive, stepNumber }: StepCardProps) {

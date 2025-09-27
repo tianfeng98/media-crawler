@@ -130,7 +130,7 @@ export function VideoDownloader() {
             <StepCard
               key={step.step}
               step={step}
-              isActive={index === currentStep}
+              isActive={index === currentStep?.index}
               stepNumber={index + 1}
             />
           ))}

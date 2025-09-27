@@ -39,17 +39,10 @@ export interface TaskStatus {
 }
 
 export interface StepStatus {
+  index: number;
   step: TaskStepEnum;
   status: TaskStatusEnum;
   progress: number;
   message: string;
   error?: string;
-}
-
-export interface DownloadState {
-  isProcessing: boolean;
-  currentStep: number;
-  steps: StepStatus[];
-  videoInfo: VideoInfo | null;
-  error: string | null;
 }

@@ -5,16 +5,16 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { VideoInfo as VideoInfoType } from "@/lib/types";
 import { formatDuration, formatFileSize } from "@/lib/utils";
+import { useCreation } from "ahooks";
 import { saveAs } from "file-saver";
 import { Clock, Download, Eye, FileVideo, HardDrive } from "lucide-react";
-import { useMemo } from "react";
 
 interface VideoInfoProps {
   videoInfo: VideoInfoType;
 }
 
 export function VideoInfo({ videoInfo }: VideoInfoProps) {
-  const videoUrl = useMemo(() => {
+  const videoUrl = useCreation(() => {
     const urlObj = new URL(window.location.origin);
     urlObj.pathname = "/api/video";
     urlObj.searchParams.set("id", videoInfo.id);

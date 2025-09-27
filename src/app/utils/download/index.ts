@@ -1,9 +1,11 @@
-import { TaskStepEnum, type VideoInfo } from "@/lib/types";
+import { TaskStepEnum, VideoInfo } from "@/lib/types";
+import { existsSync } from "node:fs";
 import { mkdir, stat, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "os";
 import pLimit from "p-limit";
 import { chromium, devices } from "playwright";
+import { retry } from "radashi";
 import { rimraf } from "rimraf";
 import { replaceIllegalCharsInPath } from "../common";
 import { downloadEventEmitter } from "../event";
@@ -33,10 +35,19 @@ const downloadM3u8FromWebsite = async ({
     verbose,
   });
   // Setup
-  const {PLAYWRIGHT_SERVER_ENDPOINT} = process.env;
-  const browser = PLAYWRIGHT_SERVER_ENDPOINT ? await chromium.connect(`ws://${PLAYWRIGHT_SERVER_ENDPOINT}`) : await chromium.launch({
-    headless,
-  });
+  const {
+    PLAYWRIGHT_SERVER_ENDPOINT,
+    PLAYWRIGHT_EXECUTABLE_PATH,
+  } = process.env;
+  const browser = PLAYWRIGHT_SERVER_ENDPOINT
+    ? await chromium.connect(`ws://${PLAYWRIGHT_SERVER_ENDPOINT}`, {
+        timeout,
+      })
+    : await chromium.launch({
+        headless,
+        timeout,
+        executablePath: PLAYWRIGHT_EXECUTABLE_PATH,
+      });
   const context = await browser.newContext(
     devices["iPhone 13 Pro"]
     // devices["Desktop Chrome"]
@@ -129,44 +140,52 @@ const downloadM3u8FromWebsite = async ({
   await Promise.all(
     downloadItems.map((item, index) =>
       limit(async ({ input, filename }) => {
-        const base64Str = await page.evaluate(
-          ({ input }) => {
-            return window
-              .fetch(input)
-              .then((res) => res.blob())
-              .then(
-                (blob) =>
-                  new Promise<string>((resolve, reject) => {
-                    const reader = new FileReader();
-                    reader.onload = function (e) {
-                      const res = e.target?.result;
-                      if (res) {
-                        if (typeof res === "string") {
-                          if (res.startsWith("data:")) {
-                            resolve(res.split(",")[1]);
+        const output = join(videoDir, replaceIllegalCharsInPath(filename));
+        if (existsSync(output)) {
+          logger.debug(`${index} ${filename} 已存在`, {
+            verbose,
+          });
+          return true;
+        }
+        const base64Str = await retry({ times: 3, delay: 1000 }, async () => {
+          return page.evaluate(
+            ({ input }) => {
+              return window
+                .fetch(input)
+                .then((res) => res.blob())
+                .then(
+                  (blob) =>
+                    new Promise<string>((resolve, reject) => {
+                      const reader = new FileReader();
+                      reader.onload = function(e) {
+                        const res = e.target?.result;
+                        if (res) {
+                          if (typeof res === "string") {
+                            if (res.startsWith("data:")) {
+                              resolve(res.split(",")[1]);
+                            } else {
+                              resolve(res);
+                            }
                           } else {
-                            resolve(res);
+                            reject(new Error("result is not a string"));
                           }
                         } else {
-                          reject(new Error("result is not a string"));
+                          reject(new Error("result is null"));
                         }
-                      } else {
-                        reject(new Error("result is null"));
-                      }
-                    };
-                    reader.readAsDataURL(blob);
-                  })
-              );
-          },
-          {
-            input,
-            index,
-          }
-        );
+                      };
+                      reader.readAsDataURL(blob);
+                    })
+                );
+            },
+            {
+              input,
+              index,
+            }
+          );
+        });
         logger.debug([`base64Str length ${index}`, base64Str.length], {
           verbose,
         });
-        const output = join(videoDir, replaceIllegalCharsInPath(filename));
         return writeFileByBase64(base64Str, output).then((success) => {
           if (success) {
             const percent = Math.round((++count * 100) / allCount);
@@ -198,47 +217,59 @@ export const downloadVideoFromWebsite = async (
   const folder =
     process.env.DOWNLOAD_FOLDER ??
     join(tmpdir(), "media-crawler", "download", id);
-  const videoName = await downloadM3u8FromWebsite({
-    timeout: 60 * 1000,
-    outputDir: folder,
-    websiteUrl,
-    fileName,
-    onProgress(percent) {
-      downloadEventEmitter.emit("progress", id, {
-        percent,
-        step: TaskStepEnum.Download,
-      });
-    },
-  });
-  logger.debug("开始转换");
-  const res = await runFFmpeg(
-    join(folder, videoName, "index.m3u8"),
-    join(folder, `${videoName}.mp4`),
-    {
-      onProgress({ currentTime, totalTime }) {
-        const percent = Math.round((currentTime * 100) / totalTime);
+  try {
+    const videoName = await downloadM3u8FromWebsite({
+      timeout: 60 * 1000,
+      outputDir: folder,
+      websiteUrl,
+      fileName,
+      onProgress(percent) {
         downloadEventEmitter.emit("progress", id, {
           percent,
-          step: TaskStepEnum.Convert,
+          step: TaskStepEnum.Download,
         });
       },
+    });
+    logger.debug("开始转换");
+    const res = await runFFmpeg(
+      join(folder, videoName, "index.m3u8"),
+      join(folder, `${videoName}.mp4`),
+      {
+        onProgress({ currentTime, totalTime }) {
+          const percent = Math.round((currentTime * 100) / totalTime);
+          downloadEventEmitter.emit("progress", id, {
+            percent,
+            step: TaskStepEnum.Convert,
+          });
+        },
+      }
+    );
+    if (res) {
+      const { size } = await stat(res.output);
+      logger.debug("转换完成");
+      await rimraf(join(folder, videoName));
+      logger.debug("删除HLS完成");
+      const videoInfo: VideoInfo = {
+        title: videoName,
+        duration: res.totalTime,
+        size,
+        format: "mp4",
+        thumbnail: "",
+        id,
+      };
+      downloadEventEmitter.emit("success", id, {
+        videoInfo,
+        output: res.output,
+      });
+      return videoInfo;
     }
-  );
-  if (res) {
-    const { size } = await stat(res.output);
-    logger.debug("转换完成");
-    await rimraf(join(folder, videoName));
-    logger.debug("删除HLS完成");
-    const videoInfo: VideoInfo = {
-      title: videoName,
-      duration: res.totalTime,
-      size,
-      format: "mp4",
-      thumbnail: "",
-      id,
-    };
-    downloadEventEmitter.emit("success", id, { videoInfo, output: res.output });
-    return videoInfo;
+    logger.error(["下载失败", "转换失败"]);
+    downloadEventEmitter.emit("error", id, { error: "转换失败" });
+    return null;
+  } catch (error) {
+    const errMsg = (error as Error).message;
+    logger.error(["下载失败", errMsg]);
+    downloadEventEmitter.emit("error", id, { error: errMsg });
+    return null;
   }
-  return null;
 };

@@ -28,7 +28,7 @@ downloadEventEmitter.on(
     updateTaskStatus(taskId, {
       status: TaskStatusEnum.Completed,
       progress: {
-        step: TaskStepEnum.Download,
+        step: TaskStepEnum.Convert,
         percent: 100,
       },
       videoInfo,

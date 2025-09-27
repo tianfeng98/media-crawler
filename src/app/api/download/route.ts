@@ -31,7 +31,7 @@ export async function POST(request: NextRequest) {
       taskId,
       status: TaskStatusEnum.Created,
       progress: {
-        step: TaskStepEnum.Convert,
+        step: TaskStepEnum.Extract,
         percent: 0,
       },
       videoInfo: null,
