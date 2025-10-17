@@ -1,4 +1,4 @@
-import { clsx, type ClassValue } from "clsx";
+import { ClassValue, clsx } from "clsx";
 import dayjs from "dayjs";
 import duration from "dayjs/plugin/duration";
 import { twMerge } from "tailwind-merge";
@@ -12,18 +12,26 @@ export function cn(...inputs: ClassValue[]) {
 }
 
 // 格式化时长
-export const formatDuration = (fullSeconds?: number) => {
-  if (typeof fullSeconds !== "number") {
+export const formatDuration = (fullMilliseconds?: number) => {
+  if (typeof fullMilliseconds !== "number") {
     return "-";
   }
-  const duration = dayjs.duration(fullSeconds, "seconds");
+  const duration = dayjs.duration(fullMilliseconds, "milliseconds");
 
-  const minutes = Math.floor(duration.asMinutes()).toString().padStart(2, "0");
-  const seconds = duration.seconds().toString().padStart(2, "0");
+  const hours = Math.floor(duration.asHours())
+    .toString()
+    .padStart(2, "0");
+  const minutes = duration
+    .minutes()
+    .toString()
+    .padStart(2, "0");
+  const seconds = duration
+    .seconds()
+    .toString()
+    .padStart(2, "0");
 
-  return `${minutes}:${seconds}`;
+  return [hours, minutes, seconds].join(":");
 };
-
 export interface FormatFileSizeOptions {
   fixed?: number;
   lowerCase?: boolean;

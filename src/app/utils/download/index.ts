@@ -29,7 +29,7 @@ const downloadM3u8FromWebsite = async ({
   timeout?: number;
   headless?: boolean;
   fileName?: string;
-  onProgress?: (percent: number) => void;
+  onProgress?: (step: TaskStepEnum, percent: number, message: string) => void;
 }) => {
   logger.debug(["正在分析页面", websiteUrl], {
     verbose,
@@ -39,6 +39,7 @@ const downloadM3u8FromWebsite = async ({
     PLAYWRIGHT_SERVER_ENDPOINT,
     PLAYWRIGHT_EXECUTABLE_PATH,
   } = process.env;
+  onProgress?.(TaskStepEnum.Extract, 0, "正在连接浏览器");
   const browser = PLAYWRIGHT_SERVER_ENDPOINT
     ? await chromium.connect(`ws://${PLAYWRIGHT_SERVER_ENDPOINT}`, {
         timeout,
@@ -48,16 +49,31 @@ const downloadM3u8FromWebsite = async ({
         timeout,
         executablePath: PLAYWRIGHT_EXECUTABLE_PATH,
       });
+  const device = "iPhone 13 Pro";
+  onProgress?.(
+    TaskStepEnum.Extract,
+    20,
+    `已成功连接浏览器，即将启动设备 ${device}`
+  );
   const context = await browser.newContext(
-    devices["iPhone 13 Pro"]
+    devices[device]
     // devices["Desktop Chrome"]
   );
+  onProgress?.(
+    TaskStepEnum.Extract,
+    25,
+    `设备${device} 启动成功，即将打开新页面`
+  );
   const page = await context.newPage();
+
+  onProgress?.(TaskStepEnum.Extract, 30, "已打开新页面，即将访问网站");
 
   await page.goto(websiteUrl, {
     timeout,
     waitUntil: "domcontentloaded",
   });
+
+  onProgress?.(TaskStepEnum.Extract, 35, "已访问网站，即将获取网页标题");
 
   let videoName = fileName ? replaceIllegalCharsInPath(fileName) : "";
   if (!videoName) {
@@ -65,7 +81,9 @@ const downloadM3u8FromWebsite = async ({
     videoName = replaceIllegalCharsInPath(pageTitle);
   }
 
-  logger.debug(`正在获取m3u8链接`, {
+  onProgress?.(TaskStepEnum.Extract, 40, `已获取网页标题，即将获取m3u8内容`);
+
+  logger.debug(`正在获取m3u8内容`, {
     verbose,
   });
 
@@ -92,7 +110,13 @@ const downloadM3u8FromWebsite = async ({
   const m3u8Url = m3u8Res.url();
   const m3u8Content = await m3u8Res.text();
 
-  logger.debug(`获取m3u8链接成功`, {
+  onProgress?.(
+    TaskStepEnum.Extract,
+    45,
+    `已获取m3u8内容，即将开始写入m3u8文件`
+  );
+
+  logger.debug(`获取m3u8内容成功`, {
     verbose,
   });
 
@@ -112,6 +136,12 @@ const downloadM3u8FromWebsite = async ({
     verbose,
   });
 
+  onProgress?.(
+    TaskStepEnum.Extract,
+    100,
+    `已写入m3u8文件，即将下载m3u8文件中的分片`
+  );
+
   if (keyDownloadItem) {
     logger.debug(`开始写入 key 文件`, {
       verbose,
@@ -129,6 +159,7 @@ const downloadM3u8FromWebsite = async ({
     logger.debug(`key 文件写入完成`, {
       verbose,
     });
+    onProgress?.(TaskStepEnum.Extract, 100, `已写入key文件`);
   }
 
   const limit = pLimit(10);
@@ -192,9 +223,10 @@ const downloadM3u8FromWebsite = async ({
             logger.debug(`${count} / ${allCount} ${filename} 下载完成`, {
               verbose,
             });
-            onProgress?.(percent);
+            onProgress?.(TaskStepEnum.Download, percent, "HLS分片下载中");
           } else {
             logger.error(`${index} ${filename} 下载失败`);
+            onProgress?.(TaskStepEnum.Download, 0, "HLS分片下载失败");
           }
         });
       }, item)
@@ -223,10 +255,11 @@ export const downloadVideoFromWebsite = async (
       outputDir: folder,
       websiteUrl,
       fileName,
-      onProgress(percent) {
+      onProgress(step, percent, message) {
         downloadEventEmitter.emit("progress", id, {
           percent,
-          step: TaskStepEnum.Download,
+          step,
+          progressMessage: message,
         });
       },
     });
@@ -235,11 +268,14 @@ export const downloadVideoFromWebsite = async (
       join(folder, videoName, "index.m3u8"),
       join(folder, `${videoName}.mp4`),
       {
-        onProgress({ currentTime, totalTime }) {
-          const percent = Math.round((currentTime * 100) / totalTime);
+        onProgress({ currentMilliseconds, totalMilliseconds }) {
+          const percent = Math.round(
+            (currentMilliseconds * 100) / totalMilliseconds
+          );
           downloadEventEmitter.emit("progress", id, {
             percent,
             step: TaskStepEnum.Convert,
+            progressMessage: "格式转换中",
           });
         },
       }
@@ -251,7 +287,7 @@ export const downloadVideoFromWebsite = async (
       logger.debug("删除HLS完成");
       const videoInfo: VideoInfo = {
         title: videoName,
-        duration: res.totalTime,
+        duration: res.totalMilliseconds,
         size,
         format: "mp4",
         thumbnail: "",
@@ -260,6 +296,7 @@ export const downloadVideoFromWebsite = async (
       downloadEventEmitter.emit("success", id, {
         videoInfo,
         output: res.output,
+        progressMessage: "格式转换完成",
       });
       return videoInfo;
     }

@@ -7,11 +7,11 @@ import { storeVideoFile } from "./storage";
 const taskStatusMap = new Map<string, TaskStatus>();
 
 // 监听下载进度事件
-downloadEventEmitter.on("progress", (taskId: string, { percent, step }) => {
+downloadEventEmitter.on("progress", (taskId: string, { percent, step, progressMessage }) => {
   const taskStatus = getTaskStatus(taskId);
   if (taskStatus) {
     taskStatus.status = TaskStatusEnum.Processing;
-    taskStatus.progress = { step, percent };
+    taskStatus.progress = { step, percent, message: progressMessage };
     taskStatusMap.set(taskId, taskStatus);
     logger.debug(`任务进度更新: ${taskId} - ${step} ${percent}%`);
   }
@@ -20,7 +20,7 @@ downloadEventEmitter.on("progress", (taskId: string, { percent, step }) => {
 // 监听下载成功事件
 downloadEventEmitter.on(
   "success",
-  async (taskId: string, { videoInfo, output }) => {
+  async (taskId: string, { videoInfo, output, progressMessage }) => {
     // 存储视频文件信息
     await storeVideoFile(taskId, output);
 
@@ -30,6 +30,7 @@ downloadEventEmitter.on(
       progress: {
         step: TaskStepEnum.Convert,
         percent: 100,
+        message: progressMessage
       },
       videoInfo,
     });

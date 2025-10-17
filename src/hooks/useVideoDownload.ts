@@ -63,7 +63,7 @@ export function useVideoDownload() {
         }
 
         const {
-          progress: { step, percent },
+          progress: { step, percent, message },
           status,
           videoInfo,
         } = taskStatus;
@@ -72,6 +72,7 @@ export function useVideoDownload() {
         updateStep(step, {
           status,
           progress: percent,
+          message,
         });
 
         // 任务完成或错误时停止轮询

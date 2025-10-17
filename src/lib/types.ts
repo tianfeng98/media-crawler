@@ -33,6 +33,7 @@ export interface TaskStatus {
   progress: {
     step: TaskStepEnum;
     percent: number;
+    message: string;
   };
   videoInfo: VideoInfo | null;
   error: string | null;
@@ -44,5 +45,6 @@ export interface StepStatus {
   status: TaskStatusEnum;
   progress: number;
   message: string;
+  progressMessage?: string;
   error?: string;
 }

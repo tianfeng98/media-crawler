@@ -82,10 +82,13 @@ export function StepCard({ step, isActive, stepNumber }: StepCardProps) {
               {stepNumber}
             </div>
             <div>
-              <h3 className="font-semibold text-lg">
+              <h3 className="font-semibold text-lg mb-1">
                 {stepIcons[step.step]} {stepTitles[step.step]}
               </h3>
               <p className="text-sm text-muted-foreground">{step.message}</p>
+              <p className="text-xs text-muted-foreground">
+                {step.progressMessage}
+              </p>
             </div>
           </div>
           <div className="flex items-center gap-2">

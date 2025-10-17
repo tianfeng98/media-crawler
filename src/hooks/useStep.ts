@@ -64,9 +64,11 @@ export const useStep = () => {
 
   const isProcessing = useMemo(() => {
     const lastStepStatus = steps.at(-1)!.status;
-    return [TaskStatusEnum.Completed, TaskStatusEnum.Error].includes(
-      lastStepStatus
-    );
+    return ![
+      TaskStatusEnum.Pending,
+      TaskStatusEnum.Completed,
+      TaskStatusEnum.Error,
+    ].includes(lastStepStatus);
   }, [steps]);
 
   const currentStep = useMemo(() => {
@@ -84,7 +86,9 @@ export const useStep = () => {
       {
         status,
         progress,
-      }: Pick<StepStatus, "status"> & Partial<Pick<StepStatus, "progress">>
+        message,
+      }: Pick<StepStatus, "status"> &
+        Partial<Pick<StepStatus, "progress" | "message">>
     ) => {
       setSteps((prev) => {
         const newSteps = [...prev];
@@ -116,6 +120,7 @@ export const useStep = () => {
           ),
           status,
           progress: updateProgress,
+          progressMessage: message,
         };
         return newSteps;
       });

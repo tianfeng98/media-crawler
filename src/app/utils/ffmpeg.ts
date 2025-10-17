@@ -23,14 +23,14 @@ export interface FFmpegProgressInfo {
   input: string;
   output: string;
   /**
-   * 当前处理的媒体时长
+   * 当前处理的媒体时长（毫秒）
    */
-  currentTime: number;
+  currentMilliseconds: number;
   /**
-   * 媒体的总时长
+   * 媒体的总时长（毫秒）
    * 如果总时长未知，则为0
    */
-  totalTime: number;
+  totalMilliseconds: number;
 }
 
 export interface FFmpegOptions {
@@ -52,7 +52,7 @@ export const runFFmpeg = async (
 
   return new Promise<FFmpegProgressInfo>((resolve, reject) => {
     const command = Ffmpeg();
-    let totalTime = 0;
+    let totalMilliseconds = 0;
 
     command.input(input);
 
@@ -81,36 +81,36 @@ export const runFFmpeg = async (
       )
       .outputOptions("-c", "copy")
       .output(output)
-      .on("start", function (commandLine) {
+      .on("start", function(commandLine) {
         logger.debug("Spawned FFmpeg with command: " + commandLine, {
           verbose,
         });
       })
-      .on("progress", function (progress) {
-        const currentTime = formatDurationStr(progress.timemark);
-        if (totalTime && totalTime > 0) {
+      .on("progress", function(progress) {
+        const currentMilliseconds = formatDurationStr(progress.timemark);
+        if (totalMilliseconds && totalMilliseconds > 0) {
           onProgress?.({
             input,
             output,
-            currentTime,
-            totalTime,
+            currentMilliseconds,
+            totalMilliseconds,
           });
         }
       })
-      .on("codecData", function (data) {
-        totalTime = formatDurationStr(data.duration);
+      .on("codecData", function(data) {
+        totalMilliseconds = formatDurationStr(data.duration);
       })
-      .on("end", function () {
+      .on("end", function() {
         const finishInfo: FFmpegProgressInfo = {
           input,
           output,
-          currentTime: totalTime,
-          totalTime,
+          currentMilliseconds: totalMilliseconds,
+          totalMilliseconds,
         };
         onProgress?.(finishInfo);
         resolve(finishInfo);
       })
-      .on("error", function (err) {
+      .on("error", function(err) {
         reject(err);
       })
       .run();
