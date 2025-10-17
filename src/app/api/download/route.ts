@@ -33,6 +33,7 @@ export async function POST(request: NextRequest) {
       progress: {
         step: TaskStepEnum.Extract,
         percent: 0,
+        message: "任务创建成功",
       },
       videoInfo: null,
       error: null,

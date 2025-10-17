@@ -1,7 +1,11 @@
 import type { NextConfig } from "next";
+import { version } from "./package.json";
 
 const nextConfig: NextConfig = {
-  output: "standalone", 
+  output: "standalone",
+  env: {
+    APP_VERSION: version,
+  },
   turbopack: {
     resolveAlias: {
       // 确保FFmpeg安装器被正确解析

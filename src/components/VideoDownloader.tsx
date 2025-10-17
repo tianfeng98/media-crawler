@@ -49,7 +49,9 @@ export function VideoDownloader() {
       {/* 标题和主题切换 */}
       <div className="flex flex-col sm:flex-row items-center justify-between gap-4">
         <div className="text-center sm:text-left space-y-2 flex-1">
-          <h1 className="text-3xl font-bold">视频下载器</h1>
+          <h1 className="text-3xl font-bold">
+            视频下载器 - Media Crawler {process.env.APP_VERSION}
+          </h1>
           <p className="text-muted-foreground">
             输入视频链接，自动完成提取、下载和格式转换
           </p>
