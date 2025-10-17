@@ -31,6 +31,7 @@ const downloadM3u8FromWebsite = async ({
   fileName?: string;
   onProgress?: (step: TaskStepEnum, percent: number, message: string) => void;
 }) => {
+  let videoName = fileName ? replaceIllegalCharsInPath(fileName) : "";
   logger.debug(["正在分析页面", websiteUrl], {
     verbose,
   });
@@ -64,179 +65,187 @@ const downloadM3u8FromWebsite = async ({
     25,
     `设备${device} 启动成功，即将打开新页面`
   );
-  const page = await context.newPage();
 
-  onProgress?.(TaskStepEnum.Extract, 30, "已打开新页面，即将访问网站");
+  try {
+    const page = await context.newPage();
 
-  await page.goto(websiteUrl, {
-    timeout,
-    waitUntil: "domcontentloaded",
-  });
+    onProgress?.(TaskStepEnum.Extract, 30, "已打开新页面，即将访问网站");
 
-  onProgress?.(TaskStepEnum.Extract, 35, "已访问网站，即将获取网页标题");
-
-  let videoName = fileName ? replaceIllegalCharsInPath(fileName) : "";
-  if (!videoName) {
-    const pageTitle = await page.title();
-    videoName = replaceIllegalCharsInPath(pageTitle);
-  }
-
-  onProgress?.(TaskStepEnum.Extract, 40, `已获取网页标题，即将获取m3u8内容`);
-
-  logger.debug(`正在获取m3u8内容`, {
-    verbose,
-  });
-
-  const m3u8Res = await page.waitForResponse(
-    async (res) => {
-      const url = res.url();
-      const urlObj = new URL(url);
-      if (urlObj.pathname.endsWith(".m3u8")) {
-        // 非嵌套m3u8
-        const content = await res.text();
-        return !content.includes(".m3u8");
-      }
-      const contentType = res.headers()["content-type"];
-      if (["application/x-mpegurl"].includes(contentType)) {
-        const content = await res.text();
-        return content.startsWith("#EXT");
-      }
-      return false;
-    },
-    {
+    await page.goto(websiteUrl, {
       timeout,
+      waitUntil: "domcontentloaded",
+    });
+
+    onProgress?.(TaskStepEnum.Extract, 35, "已访问网站，即将获取网页标题");
+
+    if (!videoName) {
+      const pageTitle = await page.title();
+      videoName = replaceIllegalCharsInPath(pageTitle);
     }
-  );
-  const m3u8Url = m3u8Res.url();
-  const m3u8Content = await m3u8Res.text();
 
-  onProgress?.(
-    TaskStepEnum.Extract,
-    45,
-    `已获取m3u8内容，即将开始写入m3u8文件`
-  );
-
-  logger.debug(`获取m3u8内容成功`, {
-    verbose,
-  });
-
-  const { downloadItems, keyDownloadItem, localM3u8FileContent } = parseM3u8(
-    m3u8Url,
-    m3u8Content
-  );
-
-  const videoDir = join(outputDir, videoName);
-  await mkdir(videoDir, { recursive: true });
-
-  logger.debug(`开始写入 index.m3u8 文件`, {
-    verbose,
-  });
-  await writeFile(join(videoDir, "index.m3u8"), localM3u8FileContent);
-  logger.debug(`index.m3u8 文件写入完成`, {
-    verbose,
-  });
-
-  onProgress?.(
-    TaskStepEnum.Extract,
-    100,
-    `已写入m3u8文件，即将下载m3u8文件中的分片`
-  );
-
-  if (keyDownloadItem) {
-    logger.debug(`开始写入 key 文件`, {
-      verbose,
-    });
-    const keyResponse = await page.waitForResponse(async (res) => {
-      const url = res.url();
-      const urlObj = new URL(url);
-      return urlObj.pathname.endsWith(keyDownloadItem.filename);
-    });
-    const body = await keyResponse.body();
-    await writeFile(
-      join(videoDir, replaceIllegalCharsInPath(keyDownloadItem.filename)),
-      body
+    onProgress?.(
+      TaskStepEnum.Extract,
+      40,
+      `网页标题: ${videoName}，即将获取m3u8内容`
     );
-    logger.debug(`key 文件写入完成`, {
+
+    logger.debug(`正在获取m3u8内容`, {
       verbose,
     });
-    onProgress?.(TaskStepEnum.Extract, 100, `已写入key文件`);
-  }
 
-  const limit = pLimit(10);
-  let count = 0;
-  const allCount = downloadItems.length;
-  logger.debug(`开始下载 ${allCount} 个文件`, {
-    verbose,
-  });
-  await Promise.all(
-    downloadItems.map((item, index) =>
-      limit(async ({ input, filename }) => {
-        const output = join(videoDir, replaceIllegalCharsInPath(filename));
-        if (existsSync(output)) {
-          logger.debug(`${index} ${filename} 已存在`, {
-            verbose,
-          });
-          return true;
+    const m3u8Res = await page.waitForResponse(
+      async (res) => {
+        const url = res.url();
+        const urlObj = new URL(url);
+        if (urlObj.pathname.endsWith(".m3u8")) {
+          // 非嵌套m3u8
+          const content = await res.text();
+          return !content.includes(".m3u8");
         }
-        const base64Str = await retry({ times: 3, delay: 1000 }, async () => {
-          return page.evaluate(
-            ({ input }) => {
-              return window
-                .fetch(input)
-                .then((res) => res.blob())
-                .then(
-                  (blob) =>
-                    new Promise<string>((resolve, reject) => {
-                      const reader = new FileReader();
-                      reader.onload = function(e) {
-                        const res = e.target?.result;
-                        if (res) {
-                          if (typeof res === "string") {
-                            if (res.startsWith("data:")) {
-                              resolve(res.split(",")[1]);
-                            } else {
-                              resolve(res);
-                            }
-                          } else {
-                            reject(new Error("result is not a string"));
-                          }
-                        } else {
-                          reject(new Error("result is null"));
-                        }
-                      };
-                      reader.readAsDataURL(blob);
-                    })
-                );
-            },
-            {
-              input,
-              index,
-            }
-          );
-        });
-        logger.debug([`base64Str length ${index}`, base64Str.length], {
-          verbose,
-        });
-        return writeFileByBase64(base64Str, output).then((success) => {
-          if (success) {
-            const percent = Math.round((++count * 100) / allCount);
-            logger.debug(`${count} / ${allCount} ${filename} 下载完成`, {
+        const contentType = res.headers()["content-type"];
+        if (["application/x-mpegurl"].includes(contentType)) {
+          const content = await res.text();
+          return content.startsWith("#EXT");
+        }
+        return false;
+      },
+      {
+        timeout,
+      }
+    );
+    const m3u8Url = m3u8Res.url();
+    const m3u8Content = await m3u8Res.text();
+
+    onProgress?.(
+      TaskStepEnum.Extract,
+      45,
+      `已获取m3u8内容，即将开始写入m3u8文件`
+    );
+
+    logger.debug(`获取m3u8内容成功`, {
+      verbose,
+    });
+
+    const { downloadItems, keyDownloadItem, localM3u8FileContent } = parseM3u8(
+      m3u8Url,
+      m3u8Content
+    );
+
+    const videoDir = join(outputDir, videoName);
+    await mkdir(videoDir, { recursive: true });
+
+    logger.debug(`开始写入 index.m3u8 文件`, {
+      verbose,
+    });
+    await writeFile(join(videoDir, "index.m3u8"), localM3u8FileContent);
+    logger.debug(`index.m3u8 文件写入完成`, {
+      verbose,
+    });
+
+    onProgress?.(
+      TaskStepEnum.Extract,
+      100,
+      `已写入m3u8文件，即将下载m3u8文件中的分片`
+    );
+
+    if (keyDownloadItem) {
+      logger.debug(`开始写入 key 文件`, {
+        verbose,
+      });
+      const keyResponse = await page.waitForResponse(async (res) => {
+        const url = res.url();
+        const urlObj = new URL(url);
+        return urlObj.pathname.endsWith(keyDownloadItem.filename);
+      });
+      const body = await keyResponse.body();
+      await writeFile(
+        join(videoDir, replaceIllegalCharsInPath(keyDownloadItem.filename)),
+        body
+      );
+      logger.debug(`key 文件写入完成`, {
+        verbose,
+      });
+      onProgress?.(TaskStepEnum.Extract, 100, `已写入key文件`);
+    }
+
+    const limit = pLimit(10);
+    let count = 0;
+    const allCount = downloadItems.length;
+    logger.debug(`开始下载 ${allCount} 个文件`, {
+      verbose,
+    });
+    await Promise.all(
+      downloadItems.map((item, index) =>
+        limit(async ({ input, filename }) => {
+          const output = join(videoDir, replaceIllegalCharsInPath(filename));
+          if (existsSync(output)) {
+            logger.debug(`${index} ${filename} 已存在`, {
               verbose,
             });
-            onProgress?.(TaskStepEnum.Download, percent, "HLS分片下载中");
-          } else {
-            logger.error(`${index} ${filename} 下载失败`);
-            onProgress?.(TaskStepEnum.Download, 0, "HLS分片下载失败");
+            return true;
           }
-        });
-      }, item)
-    )
-  );
+          const base64Str = await retry({ times: 3, delay: 1000 }, async () => {
+            return page.evaluate(
+              ({ input }) => {
+                return window
+                  .fetch(input)
+                  .then((res) => res.blob())
+                  .then(
+                    (blob) =>
+                      new Promise<string>((resolve, reject) => {
+                        const reader = new FileReader();
+                        reader.onload = function(e) {
+                          const res = e.target?.result;
+                          if (res) {
+                            if (typeof res === "string") {
+                              if (res.startsWith("data:")) {
+                                resolve(res.split(",")[1]);
+                              } else {
+                                resolve(res);
+                              }
+                            } else {
+                              reject(new Error("result is not a string"));
+                            }
+                          } else {
+                            reject(new Error("result is null"));
+                          }
+                        };
+                        reader.readAsDataURL(blob);
+                      })
+                  );
+              },
+              {
+                input,
+                index,
+              }
+            );
+          });
+          logger.debug([`base64Str length ${index}`, base64Str.length], {
+            verbose,
+          });
+          return writeFileByBase64(base64Str, output).then((success) => {
+            if (success) {
+              const percent = Math.round((++count * 100) / allCount);
+              logger.debug(`${count} / ${allCount} ${filename} 下载完成`, {
+                verbose,
+              });
+              onProgress?.(TaskStepEnum.Download, percent, "HLS分片下载中");
+            } else {
+              logger.error(`${index} ${filename} 下载失败`);
+              onProgress?.(TaskStepEnum.Download, 0, "HLS分片下载失败");
+            }
+          });
+        }, item)
+      )
+    );
 
-  logger.debug(`${videoName} 下载完成`);
-
-  await context.close();
-  await browser.close();
+    logger.debug(`${videoName} 下载完成`);
+  } catch (error) {
+    throw error;
+  } finally {
+    await context.close();
+    await browser.close();
+  }
 
   return videoName;
 };
