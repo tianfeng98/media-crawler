@@ -63,12 +63,7 @@ export const useStep = () => {
   const [steps, setSteps] = useState<StepStatus[]>([...initialSteps]);
 
   const isProcessing = useMemo(() => {
-    const lastStepStatus = steps.at(-1)!.status;
-    return ![
-      TaskStatusEnum.Pending,
-      TaskStatusEnum.Completed,
-      TaskStatusEnum.Error,
-    ].includes(lastStepStatus);
+    return steps.some((step) => step.status === TaskStatusEnum.Processing);
   }, [steps]);
 
   const currentStep = useMemo(() => {

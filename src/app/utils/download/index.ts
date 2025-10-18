@@ -49,7 +49,7 @@ const downloadM3u8FromWebsite = async ({
     ? await playwright["webkit"].connect(`ws://${PLAYWRIGHT_SERVER_ENDPOINT}`, {
         timeout,
       })
-    : await playwright["webkit"].launch({
+    : await playwright["chromium"].launch({
         headless,
         timeout,
         executablePath: PLAYWRIGHT_EXECUTABLE_PATH,
@@ -169,7 +169,7 @@ const downloadM3u8FromWebsite = async ({
 
     onProgress?.(
       TaskStepEnum.Extract,
-      100,
+      60,
       `已写入m3u8文件，正在下载m3u8文件中的分片`
     );
 
@@ -177,6 +177,7 @@ const downloadM3u8FromWebsite = async ({
       logger.debug(`开始写入 key 文件`, {
         verbose,
       });
+      onProgress?.(TaskStepEnum.Extract, 70, `正在写入key文件`);
       const keyResponse = await page.waitForResponse(async (res) => {
         const url = res.url();
         const urlObj = new URL(url);
@@ -190,8 +191,14 @@ const downloadM3u8FromWebsite = async ({
       logger.debug(`key 文件写入完成`, {
         verbose,
       });
-      onProgress?.(TaskStepEnum.Extract, 100, `已写入key文件`);
+      onProgress?.(TaskStepEnum.Extract, 80, `已写入key文件`);
     }
+
+    onProgress?.(
+      TaskStepEnum.Extract,
+      100,
+      `已写入m3u8文件，正在下载m3u8文件中的分片`
+    );
 
     const limit = pLimit(10);
     let count = 0;
@@ -288,7 +295,7 @@ export const downloadVideoFromWebsite = async (
     join(tmpdir(), "media-crawler", "download", id);
   try {
     const videoName = await downloadM3u8FromWebsite({
-      timeout: 60 * 1000,
+      timeout: +(process.env.TIMEOUT ?? 60) * 1000,
       outputDir: folder,
       websiteUrl,
       fileName,
