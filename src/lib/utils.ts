@@ -41,8 +41,8 @@ export const formatFileSize = (
   value: number,
   options: FormatFileSizeOptions = {}
 ) => {
-  if (value !== 0 && !value) {
-    return "0";
+  if (!value) {
+    return "0 B";
   }
   const { fixed = 0, lowerCase } = options;
   let unitArr = ["B", "KB", "MB", "GB", "TB", "PB", "EB", "ZB", "YB"];

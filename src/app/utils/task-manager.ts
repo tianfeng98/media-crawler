@@ -1,28 +1,35 @@
-import { TaskStatusEnum, TaskStepEnum, type TaskStatus } from "@/lib/types";
+import { TaskStatus, TaskStatusEnum, TaskStepEnum } from "@/lib/types";
 import { downloadEventEmitter } from "./event";
 import { logger } from "./logger";
-import { storeVideoFile } from "./storage";
+import { storeScreenshot, storeVideoFile } from "./storage";
 
 // 全局任务状态管理
 const taskStatusMap = new Map<string, TaskStatus>();
 
 // 监听下载进度事件
-downloadEventEmitter.on("progress", (taskId: string, { percent, step, progressMessage }) => {
-  const taskStatus = getTaskStatus(taskId);
-  if (taskStatus) {
-    taskStatus.status = TaskStatusEnum.Processing;
-    taskStatus.progress = { step, percent, message: progressMessage };
-    taskStatusMap.set(taskId, taskStatus);
-    logger.debug(`任务进度更新: ${taskId} - ${step} ${percent}%`);
+downloadEventEmitter.on(
+  "progress",
+  (taskId: string, { percent, step, progressMessage }) => {
+    const taskStatus = getTaskStatus(taskId);
+    if (taskStatus) {
+      taskStatus.status = TaskStatusEnum.Processing;
+      taskStatus.progress = { step, percent, message: progressMessage };
+      taskStatusMap.set(taskId, taskStatus);
+      logger.debug(`任务进度更新: ${taskId} - ${step} ${percent}%`);
+    }
   }
-});
+);
 
 // 监听下载成功事件
 downloadEventEmitter.on(
   "success",
-  async (taskId: string, { videoInfo, output, progressMessage }) => {
+  async (
+    taskId: string,
+    { videoInfo, output, progressMessage, screenshot }
+  ) => {
     // 存储视频文件信息
-    await storeVideoFile(taskId, output);
+    storeVideoFile(taskId, output);
+    storeScreenshot(taskId, screenshot);
 
     // 更新任务状态
     updateTaskStatus(taskId, {
@@ -30,7 +37,7 @@ downloadEventEmitter.on(
       progress: {
         step: TaskStepEnum.Convert,
         percent: 100,
-        message: progressMessage
+        message: progressMessage,
       },
       videoInfo,
     });
@@ -38,9 +45,10 @@ downloadEventEmitter.on(
 );
 
 // 监听下载错误事件
-downloadEventEmitter.on("error", (taskId: string, { error }) => {
+downloadEventEmitter.on("error", (taskId: string, { error, screenshot }) => {
   const taskStatus = taskStatusMap.get(taskId);
   if (taskStatus) {
+    storeScreenshot(taskId, screenshot);
     taskStatus.status = TaskStatusEnum.Error;
     taskStatus.error = error;
     taskStatusMap.set(taskId, taskStatus);

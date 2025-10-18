@@ -20,6 +20,12 @@ export function VideoInfo({ videoInfo }: VideoInfoProps) {
     urlObj.searchParams.set("id", videoInfo.id);
     return urlObj.toString();
   }, [videoInfo.id]);
+  const screenshotUrl = useCreation(() => {
+    const urlObj = new URL(window.location.origin);
+    urlObj.pathname = "/api/screenshot";
+    urlObj.searchParams.set("id", videoInfo.id);
+    return urlObj.toString();
+  }, [videoInfo.id]);
   const handlePreview = () => {
     window.open(videoUrl, "_blank");
   };
@@ -37,13 +43,14 @@ export function VideoInfo({ videoInfo }: VideoInfoProps) {
       <CardContent className="space-y-4">
         <div className="flex items-center gap-4">
           <div className="relative w-36 h-24 rounded-lg overflow-hidden bg-gray-100 dark:bg-gray-800">
-            {videoInfo.thumbnail && (
-              <img
-                src={videoInfo.thumbnail}
-                alt={videoInfo.title}
-                className="object-cover w-full h-full"
-              />
-            )}
+            <img
+              src={screenshotUrl}
+              alt={videoInfo.title}
+              className="object-cover w-full h-full cursor-pointer"
+              onClick={() => {
+                window.open(screenshotUrl, "_blank");
+              }}
+            />
           </div>
           <div className="flex-1 space-y-2">
             <h3 className="font-semibold text-lg line-clamp-2">
@@ -60,18 +67,20 @@ export function VideoInfo({ videoInfo }: VideoInfoProps) {
               </div>
               <Badge variant="outline">{videoInfo.format}</Badge>
             </div>
-            <div className="flex items-center gap-2 text-xs text-muted-foreground">
-              {/* 预览 */}
-              <Button variant="outline" onClick={handlePreview}>
-                <Eye className="h-3 w-3" />
-                <span className="truncate max-w-xs">预览</span>
-              </Button>
-              {/* 下载 */}
-              <Button variant="outline" onClick={handleDownload}>
-                <Download className="h-3 w-3" />
-                <span className="truncate max-w-xs">下载</span>
-              </Button>
-            </div>
+            {videoInfo.format && (
+              <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                {/* 预览 */}
+                <Button variant="outline" onClick={handlePreview}>
+                  <Eye className="h-3 w-3" />
+                  <span className="truncate max-w-xs">预览</span>
+                </Button>
+                {/* 下载 */}
+                <Button variant="outline" onClick={handleDownload}>
+                  <Download className="h-3 w-3" />
+                  <span className="truncate max-w-xs">下载</span>
+                </Button>
+              </div>
+            )}
           </div>
         </div>
       </CardContent>

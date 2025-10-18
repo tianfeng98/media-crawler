@@ -4,27 +4,31 @@ import { mkdir, stat, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "os";
 import pLimit from "p-limit";
-import { chromium, devices } from "playwright";
+import playwright, { devices } from "playwright";
 import { retry } from "radashi";
 import { rimraf } from "rimraf";
 import { replaceIllegalCharsInPath } from "../common";
 import { downloadEventEmitter } from "../event";
-import { runFFmpeg } from "../ffmpeg";
+import { runFFmpeg, runFFmpegScreenshot } from "../ffmpeg";
 import { writeFileByBase64 } from "../file";
 import { parseM3u8 } from "../hls";
 import { logger } from "../logger";
 
 const downloadM3u8FromWebsite = async ({
+  browserType = "chromium",
   outputDir,
   websiteUrl,
+  videoId,
   verbose,
   timeout,
   headless,
   fileName,
   onProgress,
 }: {
+  browserType?: "chromium" | "firefox" | "webkit";
   outputDir: string;
   websiteUrl: string;
+  videoId: string;
   verbose?: boolean;
   timeout?: number;
   headless?: boolean;
@@ -42,19 +46,19 @@ const downloadM3u8FromWebsite = async ({
   } = process.env;
   onProgress?.(TaskStepEnum.Extract, 0, "正在连接浏览器");
   const browser = PLAYWRIGHT_SERVER_ENDPOINT
-    ? await chromium.connect(`ws://${PLAYWRIGHT_SERVER_ENDPOINT}`, {
+    ? await playwright["webkit"].connect(`ws://${PLAYWRIGHT_SERVER_ENDPOINT}`, {
         timeout,
       })
-    : await chromium.launch({
+    : await playwright["webkit"].launch({
         headless,
         timeout,
         executablePath: PLAYWRIGHT_EXECUTABLE_PATH,
       });
-  const device = "iPhone 13 Pro";
+  const device = "iPhone 15 Pro Max";
   onProgress?.(
     TaskStepEnum.Extract,
     20,
-    `已成功连接浏览器，即将启动设备 ${device}`
+    `已成功连接浏览器，正在启动设备 ${device}`
   );
   const context = await browser.newContext(
     devices[device]
@@ -63,35 +67,50 @@ const downloadM3u8FromWebsite = async ({
   onProgress?.(
     TaskStepEnum.Extract,
     25,
-    `设备${device} 启动成功，即将打开新页面`
+    `设备${device} 启动成功，正在打开新页面`
   );
 
+  const page = await context.newPage();
+
+  onProgress?.(TaskStepEnum.Extract, 30, "已打开新页面，正在访问网站");
+
   try {
-    const page = await context.newPage();
-
-    onProgress?.(TaskStepEnum.Extract, 30, "已打开新页面，即将访问网站");
-
     await page.goto(websiteUrl, {
       timeout,
       waitUntil: "domcontentloaded",
     });
 
-    onProgress?.(TaskStepEnum.Extract, 35, "已访问网站，即将获取网页标题");
+    onProgress?.(TaskStepEnum.Extract, 35, "已访问网站，正在获取网页标题");
 
     if (!videoName) {
       const pageTitle = await page.title();
-      videoName = replaceIllegalCharsInPath(pageTitle);
+      videoName = `${replaceIllegalCharsInPath(pageTitle)}-${videoId}`;
     }
 
     onProgress?.(
       TaskStepEnum.Extract,
       40,
-      `网页标题: ${videoName}，即将获取m3u8内容`
+      `网页标题: ${videoName}，正在获取m3u8内容`
     );
 
     logger.debug(`正在获取m3u8内容`, {
       verbose,
     });
+
+    let waitInl: NodeJS.Timeout | null = null;
+    if (timeout) {
+      waitInl = setTimeout(() => {
+        page.reload({
+          timeout,
+          waitUntil: "domcontentloaded",
+        });
+        onProgress?.(
+          TaskStepEnum.Extract,
+          41,
+          `等待m3u8内容时间较长，刷新重试`
+        );
+      }, timeout / 2);
+    }
 
     const m3u8Res = await page.waitForResponse(
       async (res) => {
@@ -113,13 +132,18 @@ const downloadM3u8FromWebsite = async ({
         timeout,
       }
     );
+
+    if (waitInl) {
+      clearTimeout(waitInl);
+    }
+
     const m3u8Url = m3u8Res.url();
     const m3u8Content = await m3u8Res.text();
 
     onProgress?.(
       TaskStepEnum.Extract,
       45,
-      `已获取m3u8内容，即将开始写入m3u8文件`
+      `已获取m3u8内容，正在开始写入m3u8文件`
     );
 
     logger.debug(`获取m3u8内容成功`, {
@@ -132,6 +156,7 @@ const downloadM3u8FromWebsite = async ({
     );
 
     const videoDir = join(outputDir, videoName);
+
     await mkdir(videoDir, { recursive: true });
 
     logger.debug(`开始写入 index.m3u8 文件`, {
@@ -145,7 +170,7 @@ const downloadM3u8FromWebsite = async ({
     onProgress?.(
       TaskStepEnum.Extract,
       100,
-      `已写入m3u8文件，即将下载m3u8文件中的分片`
+      `已写入m3u8文件，正在下载m3u8文件中的分片`
     );
 
     if (keyDownloadItem) {
@@ -241,6 +266,9 @@ const downloadM3u8FromWebsite = async ({
 
     logger.debug(`${videoName} 下载完成`);
   } catch (error) {
+    await page.screenshot({
+      path: join(outputDir, `${videoName}-screenshot-error.png`),
+    });
     throw error;
   } finally {
     await context.close();
@@ -264,6 +292,7 @@ export const downloadVideoFromWebsite = async (
       outputDir: folder,
       websiteUrl,
       fileName,
+      videoId: id,
       onProgress(step, percent, message) {
         downloadEventEmitter.emit("progress", id, {
           percent,
@@ -299,23 +328,36 @@ export const downloadVideoFromWebsite = async (
         duration: res.totalMilliseconds,
         size,
         format: "mp4",
-        thumbnail: "",
         id,
       };
+
+      const { output: screenshotOutput } = await runFFmpegScreenshot(
+        res.output,
+        join(folder, `${videoName}-screenshot.png`),
+        {}
+      );
+
       downloadEventEmitter.emit("success", id, {
         videoInfo,
         output: res.output,
+        screenshot: screenshotOutput,
         progressMessage: "格式转换完成",
       });
       return videoInfo;
     }
     logger.error(["下载失败", "转换失败"]);
-    downloadEventEmitter.emit("error", id, { error: "转换失败" });
+    downloadEventEmitter.emit("error", id, {
+      error: "转换失败",
+      screenshot: join(folder, `${videoName}-screenshot-error.png`),
+    });
     return null;
   } catch (error) {
     const errMsg = (error as Error).message;
     logger.error(["下载失败", errMsg]);
-    downloadEventEmitter.emit("error", id, { error: errMsg });
+    downloadEventEmitter.emit("error", id, {
+      error: errMsg,
+      screenshot: join(folder, `${id}-screenshot-error.png`),
+    });
     return null;
   }
 };

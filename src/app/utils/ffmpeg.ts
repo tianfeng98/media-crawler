@@ -116,3 +116,37 @@ export const runFFmpeg = async (
       .run();
   });
 };
+
+export const runFFmpegScreenshot = async (
+  input: string,
+  output: string,
+  { verbose }: FFmpegOptions = {}
+) => {
+  const ffmpegInstall = await import("@ffmpeg-installer/ffmpeg");
+  Ffmpeg.setFfmpegPath(ffmpegInstall.path);
+  return new Promise<FFmpegProgressInfo>((resolve, reject) => {
+    const command = Ffmpeg();
+    command
+      .input(input)
+      .outputOptions("-ss", "4.500")
+      .outputOptions("-vframes", "1")
+      .output(output)
+      .on("start", function(commandLine) {
+        logger.debug("Spawned FFmpeg with command: " + commandLine, {
+          verbose,
+        });
+      })
+      .on("end", function() {
+        resolve({
+          input,
+          output,
+          currentMilliseconds: 0,
+          totalMilliseconds: 0,
+        });
+      })
+      .on("error", function(err) {
+        reject(err);
+      })
+      .run();
+  });
+};

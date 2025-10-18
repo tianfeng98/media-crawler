@@ -81,6 +81,13 @@ export function useVideoDownload() {
             setVideoInfo(videoInfo);
             return;
           case TaskStatusEnum.Error:
+            setVideoInfo({
+              id: taskId,
+              title: "",
+              duration: 0,
+              size: 0,
+              format: "",
+            });
             return;
           default:
             break;

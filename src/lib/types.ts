@@ -4,7 +4,6 @@ export interface VideoInfo {
   duration: number; // 毫秒
   size: number; // 字节
   format: string;
-  thumbnail: string;
 }
 
 export interface VideoFileInfo {

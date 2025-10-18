@@ -5,6 +5,8 @@ import { logger } from "./logger";
 // 创建keyv实例，使用内存存储
 const storage = new Keyv<VideoFileInfo>();
 
+const screenshotStorage = new Keyv<string>();
+
 // 默认过期时间：24小时
 const DEFAULT_EXPIRE_HOURS = parseInt(process.env.VIDEO_EXPIRE_HOURS || "24");
 
@@ -98,4 +100,36 @@ export async function cleanupExpiredVideo(
   } catch (error) {
     logger.error([`清理视频文件失败: ${videoId} -> ${filePath}`, error]);
   }
+}
+
+/**
+ * 存储截图
+ * @param videoId 视频ID
+ * @param screenshot 截图
+ * @param expireHours 过期时间（小时），默认24小时
+ */
+export async function storeScreenshot(
+  videoId: string,
+  screenshot: string,
+  expireHours: number = DEFAULT_EXPIRE_HOURS
+): Promise<void> {
+  await screenshotStorage.set(
+    videoId,
+    screenshot,
+    expireHours * 60 * 60 * 1000
+  );
+  logger.debug(`截图已存储: ${videoId} -> ${screenshot}`);
+}
+
+/**
+ * 获取截图
+ * @param videoId 视频ID
+ * @returns 截图或null
+ */
+export async function getScreenshot(videoId: string): Promise<string | null> {
+  const screenshot = await screenshotStorage.get(videoId);
+  if (!screenshot) {
+    return null;
+  }
+  return screenshot;
 }
