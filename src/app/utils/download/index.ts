@@ -43,6 +43,8 @@ const downloadM3u8FromWebsite = async ({
   const {
     PLAYWRIGHT_SERVER_ENDPOINT,
     PLAYWRIGHT_EXECUTABLE_PATH,
+    PLAYWRIGHT_HEADLESS,
+    PLAYWRIGH_DEVICE,
   } = process.env;
   onProgress?.(TaskStepEnum.Extract, 0, "正在连接浏览器");
   const browser = PLAYWRIGHT_SERVER_ENDPOINT
@@ -50,20 +52,19 @@ const downloadM3u8FromWebsite = async ({
         timeout,
       })
     : await playwright["chromium"].launch({
-        headless,
+        headless: headless ?? PLAYWRIGHT_HEADLESS !== "false",
         timeout,
         executablePath: PLAYWRIGHT_EXECUTABLE_PATH,
       });
-  const device = "iPhone 15 Pro Max";
+  // iPhone 15 Pro Max
+  // Desktop Chrome
+  const device = PLAYWRIGH_DEVICE ?? "Desktop Chrome";
   onProgress?.(
     TaskStepEnum.Extract,
     20,
     `已成功连接浏览器，正在启动设备 ${device}`
   );
-  const context = await browser.newContext(
-    devices[device]
-    // devices["Desktop Chrome"]
-  );
+  const context = await browser.newContext(devices[device]);
   onProgress?.(
     TaskStepEnum.Extract,
     25,
