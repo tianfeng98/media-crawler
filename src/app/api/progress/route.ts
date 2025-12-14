@@ -11,7 +11,7 @@ export async function GET(request: NextRequest) {
   }
 
   try {
-    const taskStatus = getTaskStatus(taskId);
+    const taskStatus = await getTaskStatus(taskId);
     if (!taskStatus) {
       return NextResponse.json({ error: "Task not found" }, { status: 404 });
     }

@@ -37,7 +37,7 @@ const generateLocalM3u8FileContent = (playlist: M3uPlaylist) => {
   return localM3u8FileContent;
 };
 
-interface DownloadItem {
+export interface DownloadItem {
   input: string;
   filename: string;
 }

@@ -1,11 +1,34 @@
 import { VideoFileInfo } from "@/lib/types";
+import KeyvRedis from "@keyv/redis";
 import Keyv from "keyv";
 import { logger } from "./logger";
 
 // 创建keyv实例，使用内存存储
-const storage = new Keyv<VideoFileInfo>();
+const storage = new Keyv<VideoFileInfo>(
+  {
+    store: new KeyvRedis(process.env.REDIS_URL, {
+      namespace: "files",
+      keyPrefixSeparator: "->",
+    }),
+  },
+  {
+    namespace: "files",
+    ttl: 24 * 60 * 60 * 1000,
+  }
+);
 
-const screenshotStorage = new Keyv<string>();
+const screenshotStorage = new Keyv<string>(
+  {
+    store: new KeyvRedis(process.env.REDIS_URL, {
+      namespace: "screenshots",
+      keyPrefixSeparator: "->",
+    }),
+  },
+  {
+    namespace: "screenshots",
+    ttl: 24 * 60 * 60 * 1000,
+  }
+);
 
 // 默认过期时间：24小时
 const DEFAULT_EXPIRE_HOURS = parseInt(process.env.VIDEO_EXPIRE_HOURS || "24");
@@ -66,40 +89,6 @@ export async function deleteVideoFile(videoId: string): Promise<void> {
   logger.debug(`视频文件信息已删除: ${videoId}`, {
     verbose: true,
   });
-}
-
-/**
- * 获取所有过期的视频文件
- * @returns 过期的视频文件列表
- */
-export async function getExpiredVideoFiles(): Promise<VideoFileInfo[]> {
-  const expiredFiles: VideoFileInfo[] = [];
-  const now = Date.now();
-
-  // 由于keyv没有直接的方法获取所有键，我们需要通过其他方式
-  // 这里我们返回一个空数组，实际的清理逻辑在cleanup.ts中实现
-  return expiredFiles;
-}
-
-/**
- * 清理过期的视频文件
- * @param videoId 视频ID
- * @param filePath 文件路径
- */
-export async function cleanupExpiredVideo(
-  videoId: string,
-  filePath: string
-): Promise<void> {
-  try {
-    const { unlink } = await import("node:fs/promises");
-    await unlink(filePath);
-    await deleteVideoFile(videoId);
-    logger.debug(`过期视频文件已清理: ${videoId} -> ${filePath}`, {
-      verbose: true,
-    });
-  } catch (error) {
-    logger.error([`清理视频文件失败: ${videoId} -> ${filePath}`, error]);
-  }
 }
 
 /**

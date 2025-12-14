@@ -4,12 +4,12 @@ import { createTask, getTaskStatus } from "@/app/utils/task-manager";
 import { TaskStatusEnum, TaskStepEnum, type TaskStatus } from "@/lib/types";
 import { randomUUID } from "crypto";
 import { NextRequest, NextResponse } from "next/server";
-
-export async function POST(request: NextRequest) {
-  try {
+ 
+export async function POST(request: NextRequest) { 
+  try { 
     const body = await request.json();
     const { url, fileName } = body;
-
+ 
     if (!url) {
       return NextResponse.json({ error: "URL is required" }, { status: 400 });
     }
@@ -18,10 +18,10 @@ export async function POST(request: NextRequest) {
     try {
       new URL(url);
     } catch {
-      return NextResponse.json(
+      return NextResponse.json( 
         { error: "Invalid URL format" },
         { status: 400 }
-      );
+      ); 
     }
 
     const taskId = randomUUID();
@@ -66,7 +66,7 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ error: "taskId is required" }, { status: 400 });
   }
 
-  const taskStatus = getTaskStatus(taskId);
+  const taskStatus = await getTaskStatus(taskId);
 
   if (!taskStatus) {
     return NextResponse.json({ error: "Task not found" }, { status: 404 });

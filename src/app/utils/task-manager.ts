@@ -1,20 +1,37 @@
 import { TaskStatus, TaskStatusEnum, TaskStepEnum } from "@/lib/types";
+import KeyvRedis from "@keyv/redis";
+import Keyv from "keyv";
 import { downloadEventEmitter } from "./event";
 import { logger } from "./logger";
 import { storeScreenshot, storeVideoFile } from "./storage";
 
-// 全局任务状态管理
-const taskStatusMap = new Map<string, TaskStatus>();
+const keyv = new Keyv<TaskStatus>(
+  {
+    store: new KeyvRedis(process.env.REDIS_URL, {
+      namespace: "tasks",
+      keyPrefixSeparator: "->",
+    }),
+  },
+  {
+    namespace: "tasks",
+    ttl: 24 * 60 * 60 * 1000,
+  }
+);
+
+keyv.on("error", (err) => {
+  logger.error(`Redis(${process.env.REDIS_URL}) 连接错误: ${err}`);
+});
 
 // 监听下载进度事件
 downloadEventEmitter.on(
   "progress",
-  (taskId: string, { percent, step, progressMessage }) => {
-    const taskStatus = getTaskStatus(taskId);
+  async (taskId: string, { percent, step, progressMessage }) => {
+    const taskStatus = await getTaskStatus(taskId);
     if (taskStatus) {
-      taskStatus.status = TaskStatusEnum.Processing;
-      taskStatus.progress = { step, percent, message: progressMessage };
-      taskStatusMap.set(taskId, taskStatus);
+      await updateTaskStatus(taskId, {
+        status: TaskStatusEnum.Processing,
+        progress: { step, percent, message: progressMessage },
+      });
       logger.debug(`任务进度更新: ${taskId} - ${step} ${percent}%`);
     }
   }
@@ -32,7 +49,7 @@ downloadEventEmitter.on(
     storeScreenshot(taskId, screenshot);
 
     // 更新任务状态
-    updateTaskStatus(taskId, {
+    await updateTaskStatus(taskId, {
       status: TaskStatusEnum.Completed,
       progress: {
         step: TaskStepEnum.Convert,
@@ -45,16 +62,20 @@ downloadEventEmitter.on(
 );
 
 // 监听下载错误事件
-downloadEventEmitter.on("error", (taskId: string, { error, screenshot }) => {
-  const taskStatus = taskStatusMap.get(taskId);
-  if (taskStatus) {
-    storeScreenshot(taskId, screenshot);
-    taskStatus.status = TaskStatusEnum.Error;
-    taskStatus.error = error;
-    taskStatusMap.set(taskId, taskStatus);
-    logger.error(`任务失败: ${taskId} - ${error}`);
+downloadEventEmitter.on(
+  "error",
+  async (taskId: string, { error, screenshot }) => {
+    const taskStatus = await keyv.get(taskId);
+    if (taskStatus) {
+      storeScreenshot(taskId, screenshot);
+      await updateTaskStatus(taskId, {
+        status: TaskStatusEnum.Error,
+        error,
+      });
+      logger.error(`任务失败: ${taskId} - ${error}`);
+    }
   }
-});
+);
 
 /**
  * 创建新任务
@@ -62,7 +83,7 @@ downloadEventEmitter.on("error", (taskId: string, { error, screenshot }) => {
  * @param taskStatus 任务状态
  */
 export function createTask(taskId: string, taskStatus: TaskStatus): void {
-  taskStatusMap.set(taskId, taskStatus);
+  keyv.set(taskId, taskStatus);
   logger.debug(`任务已创建: ${taskId}`, {
     verbose: true,
   });
@@ -73,8 +94,10 @@ export function createTask(taskId: string, taskStatus: TaskStatus): void {
  * @param taskId 任务ID
  * @returns 任务状态或null
  */
-export function getTaskStatus(taskId: string): TaskStatus | null {
-  return taskStatusMap.get(taskId) || null;
+export async function getTaskStatus(
+  taskId: string
+): Promise<TaskStatus | null | undefined> {
+  return keyv.get(taskId);
 }
 
 /**
@@ -82,14 +105,14 @@ export function getTaskStatus(taskId: string): TaskStatus | null {
  * @param taskId 任务ID
  * @param updates 更新内容
  */
-export function updateTaskStatus(
+export async function updateTaskStatus(
   taskId: string,
   updates: Partial<TaskStatus>
-): void {
-  const taskStatus = taskStatusMap.get(taskId);
+): Promise<void> {
+  const taskStatus = keyv.get(taskId);
   if (taskStatus) {
     Object.assign(taskStatus, updates);
-    taskStatusMap.set(taskId, taskStatus);
+    keyv.set(taskId, taskStatus);
     logger.debug(`任务状态已更新: ${taskId}`, {
       verbose: true,
     });
@@ -101,47 +124,8 @@ export function updateTaskStatus(
  * @param taskId 任务ID
  */
 export function deleteTask(taskId: string): void {
-  taskStatusMap.delete(taskId);
+  keyv.delete(taskId);
   logger.debug(`任务已删除: ${taskId}`, {
     verbose: true,
   });
-}
-
-/**
- * 获取所有任务状态（用于调试）
- * @returns 所有任务状态
- */
-export function getAllTasks(): TaskStatus[] {
-  return Array.from(taskStatusMap.values());
-}
-
-/**
- * 清理完成的任务（可选）
- * @param maxAge 最大保留时间（毫秒）
- */
-export function cleanupCompletedTasks(
-  maxAge: number = 24 * 60 * 60 * 1000
-): void {
-  const now = Date.now();
-  const tasksToDelete: string[] = [];
-
-  for (const [taskId, taskStatus] of taskStatusMap.entries()) {
-    if (
-      taskStatus.status === TaskStatusEnum.Completed ||
-      taskStatus.status === TaskStatusEnum.Error
-    ) {
-      // 这里可以添加时间检查逻辑
-      tasksToDelete.push(taskId);
-    }
-  }
-
-  tasksToDelete.forEach((taskId) => {
-    taskStatusMap.delete(taskId);
-  });
-
-  if (tasksToDelete.length > 0) {
-    logger.debug(`已清理 ${tasksToDelete.length} 个完成的任务`, {
-      verbose: true,
-    });
-  }
 }

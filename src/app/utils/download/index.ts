@@ -3,16 +3,76 @@ import { existsSync } from "node:fs";
 import { mkdir, stat, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "os";
-import pLimit from "p-limit";
-import playwright, { devices } from "playwright";
-import { retry } from "radashi";
+import playwright, { Page, devices } from "playwright";
+import { round } from "radashi";
 import { rimraf } from "rimraf";
+import { Task } from "task-executor";
 import { replaceIllegalCharsInPath } from "../common";
 import { downloadEventEmitter } from "../event";
 import { runFFmpeg, runFFmpegScreenshot } from "../ffmpeg";
 import { writeFileByBase64 } from "../file";
-import { parseM3u8 } from "../hls";
+import { DownloadItem, parseM3u8 } from "../hls";
 import { logger } from "../logger";
+
+const getBase64StrFromPage = async (page: Page, input: string) => {
+  return page.evaluate(
+    async ({ input }) => {
+      const res = await window.fetch(input);
+      const blob = await res.blob();
+      return await new Promise<string>((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = function(e) {
+          const res_1 = e.target?.result;
+          if (res_1) {
+            if (typeof res_1 === "string") {
+              if (res_1.startsWith("data:")) {
+                resolve(res_1.split(",")[1]);
+              } else {
+                resolve(res_1);
+              }
+            } else {
+              reject(new Error("result is not a string"));
+            }
+          } else {
+            reject(new Error("result is null"));
+          }
+        };
+        reader.readAsDataURL(blob);
+      });
+    },
+    {
+      input,
+    }
+  );
+};
+
+const downloadItem = async (
+  { input, filename }: DownloadItem,
+  {
+    index,
+    verbose,
+    videoDir,
+    page,
+  }: {
+    page: Page;
+    index: number;
+    videoDir: string;
+    verbose?: boolean;
+  }
+) => {
+  const output = join(videoDir, replaceIllegalCharsInPath(filename));
+  if (existsSync(output)) {
+    logger.debug(`${index} ${filename} 已存在`, {
+      verbose,
+    });
+    return true;
+  }
+  const base64Str = await getBase64StrFromPage(page, input);
+  logger.debug([`${index} 写入base64内容长度`, base64Str.length], {
+    verbose,
+  });
+  return writeFileByBase64(base64Str, output);
+};
 
 const downloadM3u8FromWebsite = async ({
   browserType = "chromium",
@@ -201,77 +261,36 @@ const downloadM3u8FromWebsite = async ({
       `已写入m3u8文件，正在下载m3u8文件中的分片`
     );
 
-    const limit = pLimit(10);
-    let count = 0;
     const allCount = downloadItems.length;
     logger.debug(`开始下载 ${allCount} 个文件`, {
       verbose,
     });
-    await Promise.all(
-      downloadItems.map((item, index) =>
-        limit(async ({ input, filename }) => {
-          const output = join(videoDir, replaceIllegalCharsInPath(filename));
-          if (existsSync(output)) {
-            logger.debug(`${index} ${filename} 已存在`, {
-              verbose,
-            });
-            return true;
-          }
-          const base64Str = await retry({ times: 3, delay: 1000 }, async () => {
-            return page.evaluate(
-              ({ input }) => {
-                return window
-                  .fetch(input)
-                  .then((res) => res.blob())
-                  .then(
-                    (blob) =>
-                      new Promise<string>((resolve, reject) => {
-                        const reader = new FileReader();
-                        reader.onload = function(e) {
-                          const res = e.target?.result;
-                          if (res) {
-                            if (typeof res === "string") {
-                              if (res.startsWith("data:")) {
-                                resolve(res.split(",")[1]);
-                              } else {
-                                resolve(res);
-                              }
-                            } else {
-                              reject(new Error("result is not a string"));
-                            }
-                          } else {
-                            reject(new Error("result is null"));
-                          }
-                        };
-                        reader.readAsDataURL(blob);
-                      })
-                  );
-              },
-              {
-                input,
-                index,
-              }
-            );
-          });
-          logger.debug([`base64Str length ${index}`, base64Str.length], {
+    const task = new Task({ name: videoName }, { concurrency: 5 });
+    task.event.on("percent", ({ percent }) => {
+      onProgress?.(TaskStepEnum.Download, round(percent, 2), "HLS分片下载中");
+    });
+
+    task.event.on("error", ({ taskInfo }) => {
+      logger.error(`${taskInfo.name} 下载失败 ${taskInfo.error?.message}`);
+      onProgress?.(TaskStepEnum.Download, 0, "HLS分片下载失败");
+    });
+    task.setAtomTasks(
+      downloadItems.map((item, index) => [
+        () =>
+          downloadItem(item, {
+            index,
+            videoDir,
             verbose,
-          });
-          return writeFileByBase64(base64Str, output).then((success) => {
-            if (success) {
-              const percent = Math.round((++count * 100) / allCount);
-              logger.debug(`${count} / ${allCount} ${filename} 下载完成`, {
-                verbose,
-              });
-              onProgress?.(TaskStepEnum.Download, percent, "HLS分片下载中");
-            } else {
-              logger.error(`${index} ${filename} 下载失败`);
-              onProgress?.(TaskStepEnum.Download, 0, "HLS分片下载失败");
-            }
-          });
-        }, item)
-      )
+            page,
+          }),
+        {
+          retryTimes: 3,
+        },
+      ])
     );
 
+    task.start();
+    await task.waitForEnd();
     logger.debug(`${videoName} 下载完成`);
   } catch (error) {
     await page.screenshot({
@@ -315,8 +334,9 @@ export const downloadVideoFromWebsite = async (
       join(folder, `${videoName}.mp4`),
       {
         onProgress({ currentMilliseconds, totalMilliseconds }) {
-          const percent = Math.round(
-            (currentMilliseconds * 100) / totalMilliseconds
+          const percent = round(
+            (currentMilliseconds * 100) / totalMilliseconds,
+            2
           );
           downloadEventEmitter.emit("progress", id, {
             percent,
