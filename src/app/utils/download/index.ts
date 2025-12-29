@@ -1,78 +1,16 @@
 import { TaskStepEnum, VideoInfo } from "@/lib/types";
-import { existsSync } from "node:fs";
 import { mkdir, stat, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "os";
-import playwright, { Page, devices } from "playwright";
-import { round } from "radashi";
+import playwright, { devices } from "playwright";
 import { rimraf } from "rimraf";
-import { Task } from "task-executor";
+import { Task } from "task-runner-plus";
 import { replaceIllegalCharsInPath } from "../common";
 import { downloadEventEmitter } from "../event";
 import { runFFmpeg, runFFmpegScreenshot } from "../ffmpeg";
-import { writeFileByBase64 } from "../file";
-import { DownloadItem, parseM3u8 } from "../hls";
+import { parseM3u8 } from "../hls";
 import { logger } from "../logger";
-
-const getBase64StrFromPage = async (page: Page, input: string) => {
-  return page.evaluate(
-    async ({ input }) => {
-      const res = await window.fetch(input);
-      const blob = await res.blob();
-      return await new Promise<string>((resolve, reject) => {
-        const reader = new FileReader();
-        reader.onload = function(e) {
-          const res_1 = e.target?.result;
-          if (res_1) {
-            if (typeof res_1 === "string") {
-              if (res_1.startsWith("data:")) {
-                resolve(res_1.split(",")[1]);
-              } else {
-                resolve(res_1);
-              }
-            } else {
-              reject(new Error("result is not a string"));
-            }
-          } else {
-            reject(new Error("result is null"));
-          }
-        };
-        reader.readAsDataURL(blob);
-      });
-    },
-    {
-      input,
-    }
-  );
-};
-
-const downloadItem = async (
-  { input, filename }: DownloadItem,
-  {
-    index,
-    verbose,
-    videoDir,
-    page,
-  }: {
-    page: Page;
-    index: number;
-    videoDir: string;
-    verbose?: boolean;
-  }
-) => {
-  const output = join(videoDir, replaceIllegalCharsInPath(filename));
-  if (existsSync(output)) {
-    logger.debug(`${index} ${filename} 已存在`, {
-      verbose,
-    });
-    return true;
-  }
-  const base64Str = await getBase64StrFromPage(page, input);
-  logger.debug([`${index} 写入base64内容长度`, base64Str.length], {
-    verbose,
-  });
-  return writeFileByBase64(base64Str, output);
-};
+import { downloadItem, formatPercent, getVideoTitle } from "./utils";
 
 const downloadM3u8FromWebsite = async ({
   browserType = "chromium",
@@ -144,8 +82,16 @@ const downloadM3u8FromWebsite = async ({
     onProgress?.(TaskStepEnum.Extract, 35, "已访问网站，正在获取网页标题");
 
     if (!videoName) {
-      const pageTitle = await page.title();
-      videoName = `${replaceIllegalCharsInPath(pageTitle)}-${videoId}`;
+      // 首先尝试获取视频标题
+      const videoTitle = await getVideoTitle(page);
+      let _title = videoTitle;
+      if (videoTitle && videoTitle.trim().length > 0) {
+        _title = videoTitle;
+      } else {
+        // 如果获取不到视频标题，使用页面标题
+        _title = await page.title();
+      }
+      videoName = `${replaceIllegalCharsInPath(_title)}-${videoId}`;
     }
 
     onProgress?.(
@@ -267,7 +213,11 @@ const downloadM3u8FromWebsite = async ({
     });
     const task = new Task({ name: videoName }, { concurrency: 5 });
     task.event.on("percent", ({ percent }) => {
-      onProgress?.(TaskStepEnum.Download, round(percent, 2), "HLS分片下载中");
+      onProgress?.(
+        TaskStepEnum.Download,
+        formatPercent(percent),
+        "HLS分片下载中"
+      );
     });
 
     task.event.on("error", ({ taskInfo }) => {
@@ -314,6 +264,7 @@ export const downloadVideoFromWebsite = async (
     process.env.DOWNLOAD_FOLDER ??
     join(tmpdir(), "media-crawler", "download", id);
   try {
+    ``;
     const videoName = await downloadM3u8FromWebsite({
       timeout: +(process.env.TIMEOUT ?? 60) * 1000,
       outputDir: folder,
@@ -334,9 +285,8 @@ export const downloadVideoFromWebsite = async (
       join(folder, `${videoName}.mp4`),
       {
         onProgress({ currentMilliseconds, totalMilliseconds }) {
-          const percent = round(
-            (currentMilliseconds * 100) / totalMilliseconds,
-            2
+          const percent = formatPercent(
+            (currentMilliseconds * 100) / totalMilliseconds
           );
           downloadEventEmitter.emit("progress", id, {
             percent,

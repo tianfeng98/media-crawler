@@ -1,11 +1,38 @@
+import { getVideoFile, nodeStreamToWebStream } from "@/app/utils";
 import { logger } from "@/app/utils/logger";
-import { getVideoFile } from "@/app/utils/storage";
+import { VideoFileInfo } from "@/lib/types";
 import { NextRequest, NextResponse } from "next/server";
 import { createReadStream, stat } from "node:fs";
+import { basename } from "node:path";
+
+const createCommonHeaders = (
+  videoFileInfo: VideoFileInfo,
+  download?: boolean | string | null
+): HeadersInit => {
+  let isDownload = false;
+  if (typeof download === "string") {
+    isDownload = download === "true";
+  } else if (typeof download === "boolean") {
+    isDownload = download;
+  }
+
+  // 处理包含中文字符的文件名，使用URL编码
+  const encodedFileName = encodeURIComponent(basename(videoFileInfo.fileName));
+
+  return {
+    "Accept-Ranges": "bytes",
+    "Cache-Control": "public, max-age=3600",
+    "Content-Type": "video/mp4",
+    "Content-Disposition": isDownload
+      ? `attachment; filename="${encodedFileName}"; filename*=UTF-8''${encodedFileName}`
+      : `inline; filename="${encodedFileName}"; filename*=UTF-8''${encodedFileName}`,
+  };
+};
 
 export async function GET(request: NextRequest) {
   const { searchParams } = new URL(request.url);
   const videoId = searchParams.get("id");
+  const isDownload = searchParams.get("download");
 
   if (!videoId) {
     return NextResponse.json(
@@ -47,6 +74,8 @@ export async function GET(request: NextRequest) {
       const range = request.headers.get("range");
       const fileSize = stats.size;
 
+      const commonHeaders = createCommonHeaders(videoFileInfo, isDownload);
+
       if (range) {
         // 处理Range请求（断点续传）
         const parts = range.replace(/bytes=/, "").split("-");
@@ -56,27 +85,23 @@ export async function GET(request: NextRequest) {
 
         const fileStream = createReadStream(filePath, { start, end });
 
-        return new NextResponse(fileStream as any, {
+        return new NextResponse(nodeStreamToWebStream(fileStream), {
           status: 206,
           headers: {
             "Content-Range": `bytes ${start}-${end}/${fileSize}`,
-            "Accept-Ranges": "bytes",
             "Content-Length": chunkSize.toString(),
-            "Content-Type": "video/mp4",
-            "Cache-Control": "public, max-age=3600",
+            ...commonHeaders,
           },
         });
       } else {
         // 返回完整文件
-        const fileStream = createReadStream(filePath);
+        const nodeStream = createReadStream(filePath);
 
-        return new NextResponse(fileStream as any, {
+        return new NextResponse(nodeStreamToWebStream(nodeStream), {
           status: 200,
           headers: {
             "Content-Length": fileSize.toString(),
-            "Content-Type": "video/mp4",
-            "Accept-Ranges": "bytes",
-            "Cache-Control": "public, max-age=3600",
+            ...commonHeaders,
           },
         });
       }
@@ -100,6 +125,7 @@ export async function GET(request: NextRequest) {
 export async function HEAD(request: NextRequest) {
   const { searchParams } = new URL(request.url);
   const videoId = searchParams.get("id");
+  const isDownload = searchParams.get("download");
   try {
     if (!videoId) {
       return new NextResponse(null, { status: 400 });
@@ -127,13 +153,13 @@ export async function HEAD(request: NextRequest) {
         return new NextResponse(null, { status: 404 });
       }
 
+      const commonHeaders = createCommonHeaders(videoFileInfo, isDownload);
+
       return new NextResponse(null, {
         status: 200,
         headers: {
           "Content-Length": stats.size.toString(),
-          "Content-Type": "video/mp4",
-          "Accept-Ranges": "bytes",
-          "Cache-Control": "public, max-age=3600",
+          ...commonHeaders,
         },
       });
     } catch (fileError) {

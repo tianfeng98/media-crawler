@@ -45,7 +45,11 @@ downloadEventEmitter.on(
     { videoInfo, output, progressMessage, screenshot }
   ) => {
     // 存储视频文件信息
-    storeVideoFile(taskId, output);
+    storeVideoFile({
+      videoId: taskId,
+      filePath: output,
+      fileName: videoInfo.title,
+    });
     storeScreenshot(taskId, screenshot);
 
     // 更新任务状态

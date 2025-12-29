@@ -8,6 +8,7 @@ export interface VideoInfo {
 
 export interface VideoFileInfo {
   id: string;
+  fileName: string;
   filePath: string;
   expiresAt: number; // 过期时间戳
 }

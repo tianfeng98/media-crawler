@@ -39,15 +39,22 @@ const DEFAULT_EXPIRE_HOURS = parseInt(process.env.VIDEO_EXPIRE_HOURS || "24");
  * @param filePath 文件路径
  * @param expireHours 过期时间（小时），默认24小时
  */
-export async function storeVideoFile(
-  videoId: string,
-  filePath: string,
-  expireHours: number = DEFAULT_EXPIRE_HOURS
-): Promise<void> {
+export async function storeVideoFile({
+  videoId,
+  filePath,
+  fileName,
+  expireHours = DEFAULT_EXPIRE_HOURS,
+}: {
+  videoId: string;
+  filePath: string;
+  fileName: string;
+  expireHours?: number;
+}): Promise<void> {
   const expiresAt = Date.now() + expireHours * 60 * 60 * 1000;
   const videoFileInfo: VideoFileInfo = {
     id: videoId,
     filePath,
+    fileName,
     expiresAt,
   };
 
