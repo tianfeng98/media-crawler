@@ -212,8 +212,6 @@ export class CrawlerTask {
   }
 
   protected async createConvertTask(ctx: CrawlerTaskCtx) {
-    await ctx.context?.close();
-    await ctx.browser?.close();
     const convertTask = new Task<CrawlerTaskCtx>(
       { id: `Convert_${this.id}`, name: "转换视频" },
       {
@@ -267,66 +265,79 @@ export class CrawlerTask {
     return convertTask;
   }
 
+  private async installTask(task: Task<CrawlerTaskCtx>, step: TaskStepEnum) {
+    task.event.on("progress", ({ percent, taskInfo }) => {
+      this.eventEmitter.emit("progress", this.id, {
+        percent,
+        step,
+        progressMessage: taskInfo.taskMsg,
+      });
+    });
+    task.event.on("complete", ({ taskInfo }) => {
+      this.eventEmitter.emit("progress", this.id, {
+        percent: 100,
+        step,
+        progressMessage: taskInfo.taskMsg,
+      });
+    });
+    task.event.on("error", async ({ error }) => {
+      let screenshot = join(
+        this.ctx.outputFolder,
+        `${this.ctx.videoInfo.title}-screenshot.png`
+      );
+      await this.ctx.page?.screenshot({
+        type: "png",
+        path: screenshot,
+      });
+      this.eventEmitter.emit("error", this.id, {
+        error: [error.name, error.message].join(": "),
+        screenshot,
+      });
+    });
+    task.start();
+    await task.waitForEnd();
+    return task.getInfo().status === TaskStatus.Completed;
+  }
+
   async start() {
     this.extractTask = await this.createExtractTask(this.ctx);
-    this.extractTask.event.on("progress", ({ percent, taskInfo }) => {
-      this.eventEmitter.emit("progress", this.id, {
-        percent,
-        step: TaskStepEnum.Extract,
-        progressMessage: taskInfo.taskMsg,
-      });
-    });
-    this.extractTask.event.on("complete", ({ taskInfo }) => {
-      this.eventEmitter.emit("progress", this.id, {
-        percent: 100,
-        step: TaskStepEnum.Extract,
-        progressMessage: taskInfo.taskMsg,
-      });
-    });
-    this.extractTask.start();
-    await this.extractTask.waitForEnd();
-
-    if (this.extractTask.getInfo().status !== TaskStatus.Completed) {
-      return;
-    }
-
-    this.downloadTask = await this.createDownloadTask(
-      this.extractTask.getCtx()
+    const extractSuccess = await this.installTask(
+      this.extractTask,
+      TaskStepEnum.Extract
     );
-    this.downloadTask.event.on("progress", ({ percent, taskInfo }) => {
-      this.eventEmitter.emit("progress", this.id, {
-        percent,
-        step: TaskStepEnum.Download,
-        progressMessage: taskInfo.taskMsg,
-      });
-    });
-    this.downloadTask.event.on("complete", ({ taskInfo }) => {
-      this.eventEmitter.emit("progress", this.id, {
-        percent: 100,
-        step: TaskStepEnum.Download,
-        progressMessage: taskInfo.taskMsg,
-      });
-    });
 
-    this.downloadTask.start();
-    await this.downloadTask.waitForEnd();
+    if (extractSuccess) {
+      this.downloadTask = await this.createDownloadTask(
+        this.extractTask.getCtx()
+      );
+      const downloadSuccess = await this.installTask(
+        this.downloadTask,
+        TaskStepEnum.Download
+      );
 
-    if (this.downloadTask.getInfo().status !== TaskStatus.Completed) {
-      return;
+      this.destroyPlaywright();
+
+      if (downloadSuccess) {
+        this.convertTask = await this.createConvertTask(
+          this.downloadTask.getCtx()
+        );
+        const convertSuccess = await this.installTask(
+          this.convertTask,
+          TaskStepEnum.Convert
+        );
+        return convertSuccess;
+      }
     }
+    return false;
+  }
 
-    this.convertTask = await this.createConvertTask(this.downloadTask.getCtx());
-    this.convertTask.start();
-    this.convertTask.event.on("progress", ({ percent, taskInfo }) => {
-      this.eventEmitter.emit("progress", this.id, {
-        percent,
-        step: TaskStepEnum.Convert,
-        progressMessage: taskInfo.taskMsg,
-      });
-    });
+  async destroyPlaywright() {
+    await this.ctx.context?.close();
+    await this.ctx.browser?.close();
   }
 
   destroy() {
+    this.destroyPlaywright();
     this.eventEmitter.removeAllListeners();
     this.extractTask?.event.all.clear();
     this.downloadTask?.event.all.clear();
