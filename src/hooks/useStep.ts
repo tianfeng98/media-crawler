@@ -1,6 +1,7 @@
 "use client";
 
 import { StepStatus, TaskStatusEnum, TaskStepEnum } from "@/lib/types";
+import { formatPercent } from "@/lib/utils";
 import { useMemoizedFn } from "ahooks";
 import { useMemo, useState } from "react";
 
@@ -92,7 +93,7 @@ export const useStep = () => {
           return newSteps;
         }
         const { index: stepIndex, progress: stepProgress } = step;
-        const updateProgress = progress ?? stepProgress;
+        const updateProgress = formatPercent(progress ?? stepProgress);
         if (stepIndex > 0) {
           for (let i = 0; i < stepIndex; i += 1) {
             newSteps[i] = {

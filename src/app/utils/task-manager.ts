@@ -1,26 +1,7 @@
 import { TaskStatus, TaskStatusEnum, TaskStepEnum } from "@/lib/types";
-import KeyvRedis from "@keyv/redis";
-import Keyv from "keyv";
 import { downloadEventEmitter } from "./event";
 import { logger } from "./logger";
-import { storeScreenshot, storeVideoFile } from "./storage";
-
-const keyv = new Keyv<TaskStatus>(
-  {
-    store: new KeyvRedis(process.env.REDIS_URL, {
-      namespace: "tasks",
-      keyPrefixSeparator: "->",
-    }),
-  },
-  {
-    namespace: "tasks",
-    ttl: 24 * 60 * 60 * 1000,
-  }
-);
-
-keyv.on("error", (err) => {
-  logger.error(`Redis(${process.env.REDIS_URL}) 连接错误: ${err}`);
-});
+import { storeScreenshot, storeVideoFile, taskStorage } from "./storage";
 
 // 监听下载进度事件
 downloadEventEmitter.on(
@@ -48,7 +29,7 @@ downloadEventEmitter.on(
     storeVideoFile({
       videoId: taskId,
       filePath: output,
-      fileName: videoInfo.title,
+      videoInfo,
     });
     storeScreenshot(taskId, screenshot);
 
@@ -69,7 +50,7 @@ downloadEventEmitter.on(
 downloadEventEmitter.on(
   "error",
   async (taskId: string, { error, screenshot }) => {
-    const taskStatus = await keyv.get(taskId);
+    const taskStatus = await taskStorage.get(taskId);
     if (taskStatus) {
       storeScreenshot(taskId, screenshot);
       await updateTaskStatus(taskId, {
@@ -86,8 +67,11 @@ downloadEventEmitter.on(
  * @param taskId 任务ID
  * @param taskStatus 任务状态
  */
-export function createTask(taskId: string, taskStatus: TaskStatus): void {
-  keyv.set(taskId, taskStatus);
+export async function createTask(
+  taskId: string,
+  taskStatus: TaskStatus
+): Promise<void> {
+  await taskStorage.set(taskId, taskStatus);
   logger.debug(`任务已创建: ${taskId}`, {
     verbose: true,
   });
@@ -101,7 +85,7 @@ export function createTask(taskId: string, taskStatus: TaskStatus): void {
 export async function getTaskStatus(
   taskId: string
 ): Promise<TaskStatus | null | undefined> {
-  return keyv.get(taskId);
+  return taskStorage.get(taskId);
 }
 
 /**
@@ -113,10 +97,10 @@ export async function updateTaskStatus(
   taskId: string,
   updates: Partial<TaskStatus>
 ): Promise<void> {
-  const taskStatus = keyv.get(taskId);
+  const taskStatus = await taskStorage.get(taskId);
   if (taskStatus) {
     Object.assign(taskStatus, updates);
-    keyv.set(taskId, taskStatus);
+    await taskStorage.set(taskId, taskStatus);
     logger.debug(`任务状态已更新: ${taskId}`, {
       verbose: true,
     });
@@ -127,8 +111,8 @@ export async function updateTaskStatus(
  * 删除任务
  * @param taskId 任务ID
  */
-export function deleteTask(taskId: string): void {
-  keyv.delete(taskId);
+export async function deleteTask(taskId: string): Promise<void> {
+  await taskStorage.delete(taskId);
   logger.debug(`任务已删除: ${taskId}`, {
     verbose: true,
   });

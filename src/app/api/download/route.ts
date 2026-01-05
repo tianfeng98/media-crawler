@@ -1,15 +1,16 @@
-import { downloadVideoFromWebsite } from "@/app/utils/download";
+import { CrawlerHLSTask } from "@/app/utils/crawler";
+import { downloadEventEmitter } from "@/app/utils/event";
 import { logger } from "@/app/utils/logger";
 import { createTask, getTaskStatus } from "@/app/utils/task-manager";
-import { TaskStatusEnum, TaskStepEnum, type TaskStatus } from "@/lib/types";
+import { TaskStatus, TaskStatusEnum, TaskStepEnum } from "@/lib/types";
 import { randomUUID } from "crypto";
 import { NextRequest, NextResponse } from "next/server";
- 
-export async function POST(request: NextRequest) { 
-  try { 
+
+export async function POST(request: NextRequest) {
+  try {
     const body = await request.json();
     const { url, fileName } = body;
- 
+
     if (!url) {
       return NextResponse.json({ error: "URL is required" }, { status: 400 });
     }
@@ -18,10 +19,10 @@ export async function POST(request: NextRequest) {
     try {
       new URL(url);
     } catch {
-      return NextResponse.json( 
+      return NextResponse.json(
         { error: "Invalid URL format" },
         { status: 400 }
-      ); 
+      );
     }
 
     const taskId = randomUUID();
@@ -39,10 +40,26 @@ export async function POST(request: NextRequest) {
       error: null,
     };
 
-    createTask(taskId, taskStatus);
+    await createTask(taskId, taskStatus);
 
     // 异步执行下载任务
-    downloadVideoFromWebsite(url, { fileName, taskId });
+    const crawlerTask = new CrawlerHLSTask(url, {
+      taskId,
+    });
+
+    crawlerTask.start();
+    crawlerTask.eventEmitter.on("progress", (id, dto) => {
+      downloadEventEmitter.emit("progress", id, dto);
+    });
+    crawlerTask.eventEmitter.on("success", (id, data) => {
+      downloadEventEmitter.emit("success", id, data);
+      crawlerTask.destroy();
+    });
+    crawlerTask.eventEmitter.on("error", (id, error) => {
+      downloadEventEmitter.emit("error", id, error);
+      crawlerTask.destroy();
+    });
+    // downloadVideoFromWebsite(url, { fileName, taskId });
 
     return NextResponse.json({
       taskId,

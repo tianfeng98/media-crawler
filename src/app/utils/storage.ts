@@ -1,10 +1,28 @@
-import { VideoFileInfo } from "@/lib/types";
+import { TaskStatus, VideoFileInfo, VideoInfo } from "@/lib/types";
 import KeyvRedis from "@keyv/redis";
 import Keyv from "keyv";
 import { logger } from "./logger";
 
-// 创建keyv实例，使用内存存储
-const storage = new Keyv<VideoFileInfo>(
+const DEFAULT_EXPIRE_SECONDS = 12 * 60 * 60;
+
+const FILE_TTL =
+  parseInt(process.env.FILE_TIMEOUT_SECONDS || `${DEFAULT_EXPIRE_SECONDS}`) *
+  1000;
+
+export const taskStorage = new Keyv<TaskStatus>(
+  {
+    store: new KeyvRedis(process.env.REDIS_URL, {
+      namespace: "tasks",
+      keyPrefixSeparator: "->",
+    }),
+  },
+  {
+    namespace: "tasks",
+    ttl: FILE_TTL,
+  }
+);
+
+const fileStorage = new Keyv<VideoFileInfo>(
   {
     store: new KeyvRedis(process.env.REDIS_URL, {
       namespace: "files",
@@ -13,7 +31,7 @@ const storage = new Keyv<VideoFileInfo>(
   },
   {
     namespace: "files",
-    ttl: 24 * 60 * 60 * 1000,
+    ttl: FILE_TTL,
   }
 );
 
@@ -26,39 +44,36 @@ const screenshotStorage = new Keyv<string>(
   },
   {
     namespace: "screenshots",
-    ttl: 24 * 60 * 60 * 1000,
+    ttl: FILE_TTL,
   }
 );
-
-// 默认过期时间：24小时
-const DEFAULT_EXPIRE_HOURS = parseInt(process.env.VIDEO_EXPIRE_HOURS || "24");
 
 /**
  * 存储视频文件信息
  * @param videoId 视频ID
  * @param filePath 文件路径
- * @param expireHours 过期时间（小时），默认24小时
+ * @param expireSeconds 过期时间（秒），默认12小时
  */
 export async function storeVideoFile({
   videoId,
   filePath,
-  fileName,
-  expireHours = DEFAULT_EXPIRE_HOURS,
+  videoInfo,
+  expireSeconds = DEFAULT_EXPIRE_SECONDS,
 }: {
   videoId: string;
   filePath: string;
-  fileName: string;
-  expireHours?: number;
+  videoInfo: VideoInfo;
+  expireSeconds?: number;
 }): Promise<void> {
-  const expiresAt = Date.now() + expireHours * 60 * 60 * 1000;
+  const expiresAt = Date.now() + expireSeconds * 1000;
   const videoFileInfo: VideoFileInfo = {
     id: videoId,
     filePath,
-    fileName,
+    videoInfo,
     expiresAt,
   };
 
-  await storage.set(videoId, videoFileInfo, expireHours * 60 * 60 * 1000);
+  await fileStorage.set(videoId, videoFileInfo, expireSeconds * 1000);
   logger.debug(`视频文件信息已存储: ${videoId} -> ${filePath}`);
 }
 
@@ -70,14 +85,14 @@ export async function storeVideoFile({
 export async function getVideoFile(
   videoId: string
 ): Promise<VideoFileInfo | null> {
-  const videoFileInfo = await storage.get(videoId);
+  const videoFileInfo = await fileStorage.get(videoId);
   if (!videoFileInfo) {
     return null;
   }
 
   // 检查是否过期
   if (Date.now() > videoFileInfo.expiresAt) {
-    await storage.delete(videoId);
+    await fileStorage.delete(videoId);
     logger.debug(`视频文件已过期，已删除: ${videoId}`, {
       verbose: true,
     });
@@ -92,7 +107,7 @@ export async function getVideoFile(
  * @param videoId 视频ID
  */
 export async function deleteVideoFile(videoId: string): Promise<void> {
-  await storage.delete(videoId);
+  await fileStorage.delete(videoId);
   logger.debug(`视频文件信息已删除: ${videoId}`, {
     verbose: true,
   });
@@ -107,13 +122,9 @@ export async function deleteVideoFile(videoId: string): Promise<void> {
 export async function storeScreenshot(
   videoId: string,
   screenshot: string,
-  expireHours: number = DEFAULT_EXPIRE_HOURS
+  expireSeconds: number = DEFAULT_EXPIRE_SECONDS
 ): Promise<void> {
-  await screenshotStorage.set(
-    videoId,
-    screenshot,
-    expireHours * 60 * 60 * 1000
-  );
+  await screenshotStorage.set(videoId, screenshot, expireSeconds * 1000);
   logger.debug(`截图已存储: ${videoId} -> ${screenshot}`);
 }
 

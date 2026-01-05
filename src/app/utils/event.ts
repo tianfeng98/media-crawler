@@ -2,7 +2,7 @@ import { TaskStepEnum, type VideoInfo } from "@/lib/types";
 import EventEmitter from "events";
 
 export const downloadEventEmitter = new EventEmitter<{
-  progress: [id: string, { percent: number; step: TaskStepEnum; progressMessage: string }];
-  success: [id: string, { videoInfo: VideoInfo; output: string; screenshot: string; progressMessage: string }];
-  error: [id: string, { error: string, screenshot: string }];
+  progress: [string, { percent: number; step: TaskStepEnum; progressMessage?: string }];
+  success: [string, { videoInfo: VideoInfo; output: string; screenshot: string; progressMessage?: string }];
+  error: [string, { error: string, screenshot: string }];
 }>();

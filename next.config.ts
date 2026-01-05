@@ -43,7 +43,6 @@ const nextConfig: NextConfig = {
   allowedDevOrigins: [
     "localhost:3000",
     "127.0.0.1:3000",
-    "192.168.0.106:3000",
     ...getIPAdressList().map((ip) => `${ip}:3000`),
   ],
 };

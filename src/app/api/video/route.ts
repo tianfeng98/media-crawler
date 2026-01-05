@@ -17,12 +17,16 @@ const createCommonHeaders = (
   }
 
   // 处理包含中文字符的文件名，使用URL编码
-  const encodedFileName = encodeURIComponent(basename(videoFileInfo.fileName));
+  const encodedFileName = encodeURIComponent(
+    basename(
+      `${videoFileInfo.videoInfo.title}.${videoFileInfo.videoInfo.format}`
+    )
+  );
 
   return {
     "Accept-Ranges": "bytes",
     "Cache-Control": "public, max-age=3600",
-    "Content-Type": "video/mp4",
+    "Content-Type": `video/${videoFileInfo.videoInfo.format}`,
     "Content-Disposition": isDownload
       ? `attachment; filename="${encodedFileName}"; filename*=UTF-8''${encodedFileName}`
       : `inline; filename="${encodedFileName}"; filename*=UTF-8''${encodedFileName}`,

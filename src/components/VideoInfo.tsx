@@ -30,7 +30,7 @@ export function VideoInfo({ videoInfo }: VideoInfoProps) {
     window.open(videoUrl, "_blank");
   };
   const handleDownload = () => {
-    saveAs(videoUrl, videoInfo.title);
+    saveAs(videoUrl, `${videoInfo.title}.${videoInfo.format}`);
   };
   return (
     <Card className="w-full">

@@ -1,6 +1,7 @@
 import { ClassValue, clsx } from "clsx";
 import dayjs from "dayjs";
 import duration from "dayjs/plugin/duration";
+import { round } from "radashi";
 import { twMerge } from "tailwind-merge";
 
 dayjs.extend(duration);
@@ -52,4 +53,8 @@ export const formatFileSize = (
   const index = Math.floor(Math.log(value) / Math.log(1024));
   const size: number = value / 1024 ** index;
   return `${size.toFixed(fixed)} ${unitArr[index]}`;
+};
+
+export const formatPercent = (percent: number) => {
+  return Math.min(100, round(percent, 2));
 };

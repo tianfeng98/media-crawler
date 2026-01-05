@@ -1,3 +1,4 @@
+import { DownloadItem } from "@/lib/types";
 import { M3uParser, type M3uPlaylist } from "m3u-parser-generator";
 import { basename, resolve } from "path-browserify";
 import { deepClone } from "../common";
@@ -37,14 +38,12 @@ const generateLocalM3u8FileContent = (playlist: M3uPlaylist) => {
   return localM3u8FileContent;
 };
 
-export interface DownloadItem {
-  input: string;
-  filename: string;
-}
+
 
 const generateDownloadItem = (
   m3u8Url: string,
-  itemUri: string
+  itemUri: string,
+  type: "key" | "media"
 ): DownloadItem => {
   let input = itemUri;
   let filename = itemUri;
@@ -60,6 +59,7 @@ const generateDownloadItem = (
   return {
     input,
     filename,
+    type
   };
 };
 
@@ -101,13 +101,13 @@ export const parseM3u8 = (
     if (keyIndex > -1) {
       const m3uKey = new M3uKey(playlist.customData[keyIndex]!.value);
       if (m3uKey.uri) {
-        keyDownloadItem = generateDownloadItem(m3u8Url, m3uKey.uri);
+        keyDownloadItem = generateDownloadItem(m3u8Url, m3uKey.uri, "key");
       }
     }
     for (let i = 0, len = mediaList.length; i < len; i += 1) {
       const media = mediaList[i]!;
       if (media.location) {
-        downloadItems.push(generateDownloadItem(m3u8Url, media.location));
+        downloadItems.push(generateDownloadItem(m3u8Url, media.location, "media"));
       }
     }
 

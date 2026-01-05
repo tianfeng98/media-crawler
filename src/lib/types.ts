@@ -8,7 +8,7 @@ export interface VideoInfo {
 
 export interface VideoFileInfo {
   id: string;
-  fileName: string;
+  videoInfo: VideoInfo;
   filePath: string;
   expiresAt: number; // 过期时间戳
 }
@@ -33,7 +33,7 @@ export interface TaskStatus {
   progress: {
     step: TaskStepEnum;
     percent: number;
-    message: string;
+    message?: string;
   };
   videoInfo: VideoInfo | null;
   error: string | null;
@@ -47,4 +47,15 @@ export interface StepStatus {
   message: string;
   progressMessage?: string;
   error?: string;
+}
+
+export enum DownloadType {
+  HLS = "hls",
+  General = "general",
+}
+
+export interface DownloadItem {
+  input: string;
+  filename: string;
+  type: "key" | "media";
 }
