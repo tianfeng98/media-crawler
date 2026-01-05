@@ -1,7 +1,25 @@
 {
   "name": "media-crawler",
   "version": "0.1.5",
-  "private": true,
+  "description": "基于 Next.js 的智能视频下载器，支持从网页中提取、下载和转换视频文件",
+  "author": "linktodream@163.com",
+  "license": "MIT",
+  "keywords": [
+    "video-downloader",
+    "media-crawler",
+    "next.js",
+    "playwright",
+    "hls",
+    "video-processing"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/tianfeng98/media-crawler.git"
+  },
+  "homepage": "https://github.com/tianfeng98/media-crawler#readme",
+  "bugs": {
+    "url": "https://github.com/tianfeng98/media-crawler/issues"
+  },
   "scripts": {
     "dev": "next dev",
     "chromium-install": "pnpm dlx playwright install chromium-headless-shell --with-deps --no-shell",
