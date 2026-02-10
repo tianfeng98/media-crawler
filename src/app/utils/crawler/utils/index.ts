@@ -3,10 +3,11 @@ import markdownit from "markdown-it";
 import { existsSync } from "node:fs";
 import { join } from "node:path";
 import { Page } from "playwright";
-import { replaceIllegalCharsInPath } from "../common";
-import { writeFileByBase64 } from "../file";
-import { instruct } from "../llm";
-import { logger } from "../logger";
+import { replaceIllegalCharsInPath } from "../../common";
+import { writeFileByBase64 } from "../../file";
+import { ChatCompletionMessageParam, instruct } from "../../llm";
+import { logger } from "../../logger";
+import { getPageTitleInDom } from "./dom";
 
 const getBase64StrFromPage = async (page: Page, input: string) => {
   return page.evaluate(
@@ -15,7 +16,7 @@ const getBase64StrFromPage = async (page: Page, input: string) => {
       const blob = await res.blob();
       return await new Promise<string>((resolve, reject) => {
         const reader = new FileReader();
-        reader.onload = function(e) {
+        reader.onload = function (e) {
           const res_1 = e.target?.result;
           if (res_1) {
             if (typeof res_1 === "string") {
@@ -36,39 +37,22 @@ const getBase64StrFromPage = async (page: Page, input: string) => {
     },
     {
       input,
-    }
+    },
   );
 };
 
 export const getVideoTitle = async (page: Page): Promise<string> => {
-  const html = await page.evaluate(() => {
-    // 移除注释，移除所有script、style、img标签，移除所有标签中的onclick事件、style属性、class属性、data-*属性、文本中间的间隔
-    return (
-      document
-        .querySelector("body")
-        ?.innerHTML?.replace(
-          /(<!--.*?-->|<script[^>]*>.*?<\/script>|<style[^>]*>.*?<\/style>|<img[^>]*>|(<[^>]*?)\s+(onclick|style|class|data-[^\s=]+)[^>]*?(\s*?>)|\s+)/gs,
-          (match, p1, p2, p3, p4) => {
-            if (p1) {
-              // 注释、script、style、img 标签，直接移除
-              return "";
-            } else if (p2 && p3) {
-              // 移除标签内的属性，保留标签和其他属性
-              return `${p2}${p4}`;
-            } else {
-              // 多个空格替换为单个空格
-              return " ";
-            }
-          }
-        )
-        .trim() || ""
-    );
-  });
-  const {
-    success,
-    errorMsg,
-    message: llmResult,
-  } = await instruct(`你是一个专业的网页内容解析器。请从以下 HTML 文本中精确提取**当前页面主视频的标题**。
+  const html = await page.evaluate(getPageTitleInDom);
+
+  const messages: ChatCompletionMessageParam[] = [
+    {
+      role: "system",
+      content:
+        "你是一个专业的网页内容解析器，你需要根据用户提供的HTML代码，提取其中的视频标题",
+    },
+    {
+      role: "user",
+      content: `你是一个专业的网页内容解析器。请从以下 HTML 文本中精确提取**当前页面主视频的标题**。
 
 提取规则：
 - 忽略所有推荐视频、相关视频、评论、导航栏、页脚、广告中的文本。
@@ -85,7 +69,11 @@ ${html}
 {"title": "【2026春晚】周杰伦《青花瓷》现场版"}
 或
 {"title": ""}
-`);
+`,
+    },
+  ];
+
+  const { success, errorMsg, message: llmResult } = await instruct(messages);
   if (!success) {
     logger.error(`LLM解析视频标题失败 ${errorMsg}`);
     return "";
@@ -116,7 +104,7 @@ export const downloadItem = async (
   }: {
     page: Page;
     videoDir: string;
-  }
+  },
 ) => {
   const output = join(videoDir, replaceIllegalCharsInPath(filename));
   if (existsSync(output)) {

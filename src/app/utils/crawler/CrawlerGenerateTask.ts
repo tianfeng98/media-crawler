@@ -9,37 +9,43 @@ export class CrawlerGenerateTask extends CrawlerTask {
     super(websiteUrl, options);
   }
 
-  public async createExtractTask(ctx: CrawlerTaskCtx) {
+  public async createExtractTask() {
     const extractTask = new Task<CrawlerTaskCtx>(
       { id: `Extract_${this.id}`, name: "提取视频信息" },
       {
-        ctx,
-      }
+        sharedCtx: this.ctx,
+      },
     );
+    this.ctx.bindTask(extractTask);
 
     const webInitAtomTasks = await this.createWebInitAtomTask();
     const findResourceTask = new AtomTask<CrawlerTaskCtx>({
       exec: async ({ ctx, execCount }) => {
-        if (!ctx.page) {
+        const page = ctx.get("page");
+        if (!page) {
           throw new Error("页面未创建");
         }
         if (execCount > 1) {
-          ctx.page.reload({
+          page.reload({
             timeout: this.browserTimeout,
             waitUntil: "domcontentloaded",
           });
         }
-        ctx.mediaResponse = await ctx.page.waitForResponse(
-          async (res) => {
-            const contentType = res.headers()["content-type"];
-            return (
-              contentType.startsWith("video/") ||
-              contentType.startsWith("audio/")
-            );
-          },
-          {
-            timeout: this.browserTimeout,
-          }
+
+        ctx.set(
+          "mediaResponse",
+          await page.waitForResponse(
+            async (res) => {
+              const contentType = res.headers()["content-type"];
+              return (
+                contentType.startsWith("video/") ||
+                contentType.startsWith("audio/")
+              );
+            },
+            {
+              timeout: this.browserTimeout,
+            },
+          ),
         );
       },
     });
@@ -49,26 +55,33 @@ export class CrawlerGenerateTask extends CrawlerTask {
     return extractTask;
   }
 
-  public async createDownloadTask(ctx: CrawlerTaskCtx) {
+  public async createDownloadTask() {
     const downloadTask = new Task<CrawlerTaskCtx>(
       { id: `Download_${this.id}`, name: "下载视频" },
       {
-        ctx,
-      }
+        sharedCtx: this.ctx,
+      },
     );
+    this.ctx.bindTask(downloadTask);
     downloadTask.setAtomTasks([
       new AtomTask<CrawlerTaskCtx>({
         exec: async ({ ctx }) => {
-          if (!ctx.mediaResponse) {
+          const mediaResponse = ctx.get("mediaResponse");
+          if (!mediaResponse) {
             throw new Error("未获取媒体响应");
           }
-          const body = await ctx.mediaResponse.body();
+          const videoInfo = ctx.get("videoInfo");
+          if (!videoInfo) {
+            throw new Error("视频信息未获取");
+          }
+          const outputFolder = ctx.get("outputFolder");
+          if (!outputFolder) {
+            throw new Error("输出文件夹未获取");
+          }
+          const body = await mediaResponse.body();
           await writeFile(
-            join(
-              ctx.outputFolder,
-              replaceIllegalCharsInPath(ctx.videoInfo.title)
-            ),
-            body
+            join(outputFolder, replaceIllegalCharsInPath(videoInfo.title)),
+            body,
           );
         },
       }),

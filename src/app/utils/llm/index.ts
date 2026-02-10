@@ -1,5 +1,8 @@
 import { OpenAI } from "openai";
 import { ChatCompletionMessageParam } from "openai/resources";
+import { logger } from "..";
+
+export type { ChatCompletionMessageParam } from "openai/resources";
 
 export interface InstructResult {
   success: boolean;
@@ -7,7 +10,9 @@ export interface InstructResult {
   message: string;
 }
 
-export const instruct = async (prompt: string): Promise<InstructResult> => {
+export const instruct = async (
+  messages: ChatCompletionMessageParam[],
+): Promise<InstructResult> => {
   const { OPENAI_BASE_URL, OPENAI_API_KEY, MODEL_NAME } = process.env;
   if (!OPENAI_BASE_URL || !OPENAI_API_KEY || !MODEL_NAME) {
     return {
@@ -19,26 +24,22 @@ export const instruct = async (prompt: string): Promise<InstructResult> => {
   const openai = new OpenAI({
     baseURL: OPENAI_BASE_URL,
     apiKey: OPENAI_API_KEY,
+    timeout: 60 * 1000,
   });
-  const messages: ChatCompletionMessageParam[] = [
-    {
-      role: "system",
-      content:
-        "你是一个专业的网页内容解析器，你需要根据用户提供的HTML代码，提取其中的视频标题",
-    },
-    {
-      role: "user",
-      content: prompt,
-    },
-  ];
+
+  logger.debug(["LLM request", messages], { verbose: true });
 
   const response = await openai.chat.completions.create({
     model: MODEL_NAME,
     messages,
   });
 
+  logger.debug(["LLM response", response], { verbose: true });
+
+  const result = response?.choices.at(0)?.message.content || "";
+
   return {
     success: true,
-    message: response.choices.at(0)?.message.content || "",
+    message: result,
   };
 };

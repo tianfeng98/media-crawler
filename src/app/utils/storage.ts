@@ -4,6 +4,7 @@ import Keyv from "keyv";
 import { logger } from "./logger";
 
 const DEFAULT_EXPIRE_SECONDS = 12 * 60 * 60;
+const REDIS_URL = process.env.REDIS_URL;
 
 const FILE_TTL =
   parseInt(process.env.FILE_TIMEOUT_SECONDS || `${DEFAULT_EXPIRE_SECONDS}`) *
@@ -11,10 +12,12 @@ const FILE_TTL =
 
 export const taskStorage = new Keyv<TaskStatus>(
   {
-    store: new KeyvRedis(process.env.REDIS_URL, {
-      namespace: "tasks",
-      keyPrefixSeparator: "->",
-    }),
+    store: REDIS_URL
+      ? new KeyvRedis(REDIS_URL, {
+          namespace: "tasks",
+          keyPrefixSeparator: "->",
+        })
+      : undefined,
   },
   {
     namespace: "tasks",
@@ -24,10 +27,12 @@ export const taskStorage = new Keyv<TaskStatus>(
 
 const fileStorage = new Keyv<VideoFileInfo>(
   {
-    store: new KeyvRedis(process.env.REDIS_URL, {
-      namespace: "files",
-      keyPrefixSeparator: "->",
-    }),
+    store: REDIS_URL
+      ? new KeyvRedis(REDIS_URL, {
+          namespace: "files",
+          keyPrefixSeparator: "->",
+        })
+      : undefined,
   },
   {
     namespace: "files",
@@ -37,10 +42,12 @@ const fileStorage = new Keyv<VideoFileInfo>(
 
 const screenshotStorage = new Keyv<string>(
   {
-    store: new KeyvRedis(process.env.REDIS_URL, {
-      namespace: "screenshots",
-      keyPrefixSeparator: "->",
-    }),
+    store: REDIS_URL
+      ? new KeyvRedis(REDIS_URL, {
+          namespace: "screenshots",
+          keyPrefixSeparator: "->",
+        })
+      : undefined,
   },
   {
     namespace: "screenshots",

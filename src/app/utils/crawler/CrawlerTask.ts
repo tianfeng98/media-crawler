@@ -15,7 +15,13 @@ import {
 } from "playwright";
 import { uid } from "radashi";
 import { rimraf } from "rimraf";
-import { AtomTask, Task, TaskStatus } from "task-runner-plus";
+import {
+  AtomTask,
+  AtomTaskStatus,
+  Task,
+  TaskCtx,
+  TaskStatus,
+} from "task-runner-plus";
 import { replaceIllegalCharsInPath } from "../common";
 import { runFFmpeg, runFFmpegScreenshot } from "../ffmpeg";
 import { logger } from "../logger";
@@ -51,11 +57,11 @@ export class CrawlerTask {
   protected id = uid(24);
   protected websiteUrl: string;
   protected browserTimeout?: number;
-  protected ctx: CrawlerTaskCtx;
+  protected readonly ctx: TaskCtx<CrawlerTaskCtx>;
   eventEmitter = new EventEmitter<{
     progress: [
       string,
-      { percent: number; step: TaskStepEnum; progressMessage?: string }
+      { percent: number; step: TaskStepEnum; progressMessage?: string },
     ];
     success: [
       string,
@@ -64,7 +70,7 @@ export class CrawlerTask {
         output: string;
         screenshot: string;
         progressMessage?: string;
-      }
+      },
     ];
     error: [string, { error: string; screenshot: string }];
   }>();
@@ -78,31 +84,33 @@ export class CrawlerTask {
       taskId,
       browserTimeout = 30 * 1000,
       outputFolder,
-    }: CrawlerTaskOptions = {}
+    }: CrawlerTaskOptions = {},
   ) {
     if (taskId) {
       this.id = taskId;
     }
     this.websiteUrl = websiteUrl;
     this.browserTimeout = browserTimeout;
-    this.ctx = {
-      logger,
-      videoInfo: {
-        id: this.id,
-        title: this.id,
-        duration: 0,
-        size: 0,
-        format: process.env.VIDEO_FORMAT ?? "mp4",
+    this.ctx = new TaskCtx<CrawlerTaskCtx>({
+      defaultData: {
+        logger,
+        videoInfo: {
+          id: this.id,
+          title: this.id,
+          duration: 0,
+          size: 0,
+          format: process.env.VIDEO_FORMAT ?? "mp4",
+        },
+        outputFolder:
+          outputFolder ||
+          process.env.DOWNLOAD_FOLDER ||
+          join(tmpdir(), "media-crawler", "download", this.id),
+        downloadItems: [],
       },
-      outputFolder:
-        outputFolder ||
-        process.env.DOWNLOAD_FOLDER ||
-        join(tmpdir(), "media-crawler", "download", this.id),
-      downloadItems: [],
-    };
+    });
   }
 
-  protected async createWebInitAtomTask() {
+  protected createWebInitAtomTask() {
     const atomTasks: AtomTask<CrawlerTaskCtx>[] = [];
     const {
       PLAYWRIGHT_SERVER_ENDPOINT,
@@ -117,9 +125,9 @@ export class CrawlerTask {
     const device = PLAYWRIGHT_DEVICE ?? "Desktop Chrome";
 
     atomTasks.push(
-      new AtomTask<CrawlerTaskCtx>({
+      new AtomTask({
         exec: async ({ ctx }) => {
-          ctx.browser = PLAYWRIGHT_SERVER_ENDPOINT
+          const browser = PLAYWRIGHT_SERVER_ENDPOINT
             ? await webkit.connect(`ws://${PLAYWRIGHT_SERVER_ENDPOINT}`, {
                 timeout,
               })
@@ -128,39 +136,43 @@ export class CrawlerTask {
                 timeout,
                 executablePath: PLAYWRIGHT_EXECUTABLE_PATH,
               });
+          ctx.set("browser", browser);
         },
         processMsg: "连接浏览器",
         successMsg: "浏览器连接成功",
         errorMsg: "浏览器连接失败",
       }),
-      new AtomTask<CrawlerTaskCtx>({
+      new AtomTask({
         exec: async ({ ctx }) => {
-          if (!ctx.browser) {
+          const browser = ctx.get("browser");
+          if (!browser) {
             throw new Error("浏览器未连接");
           }
-          ctx.context = await ctx.browser.newContext(devices[device]);
+          ctx.set("context", await browser.newContext(devices[device]));
         },
         processMsg: `启动设备 ${device}`,
         successMsg: `设备${device} 启动成功`,
         errorMsg: `设备${device} 启动失败`,
       }),
-      new AtomTask<CrawlerTaskCtx>({
+      new AtomTask({
         exec: async ({ ctx }) => {
-          if (!ctx.context) {
+          const context = ctx.get("context");
+          if (!context) {
             throw new Error("浏览器上下文未创建");
           }
-          ctx.page = await ctx.context.newPage();
+          ctx.set("page", await context.newPage());
         },
         processMsg: "打开页面",
         successMsg: "页面打开成功",
         errorMsg: "页面打开失败",
       }),
-      new AtomTask<CrawlerTaskCtx>({
+      new AtomTask({
         exec: async ({ ctx }) => {
-          if (!ctx.page) {
+          const page = ctx.get("page");
+          if (!page) {
             throw new Error("页面未创建");
           }
-          await ctx.page.goto(this.websiteUrl, {
+          await page.goto(this.websiteUrl, {
             timeout,
             waitUntil: "domcontentloaded",
           });
@@ -169,86 +181,140 @@ export class CrawlerTask {
         successMsg: "访问网站成功",
         errorMsg: "访问网站失败",
       }),
-      new AtomTask<CrawlerTaskCtx>({
+      new AtomTask({
         exec: async ({ ctx }) => {
-          if (!ctx.page) {
+          const page = ctx.get("page");
+          if (!page) {
             throw new Error("页面未创建");
           }
-          const videoTitle = await getVideoTitle(ctx.page);
-          if (videoTitle.length > 0) {
-            ctx.videoInfo.title = videoTitle;
-          } else {
-            const pageTitle = await ctx.page.title();
-            ctx.videoInfo.title = `${replaceIllegalCharsInPath(pageTitle)}-${
-              this.id
-            }`;
+          const isVideoExist = await page.evaluate(
+            () => document.querySelector("video") !== null,
+          );
+          if (!isVideoExist) {
+            await page.goto(this.websiteUrl, {
+              timeout,
+              // domcontentloaded事件结束后页面不一定加载完成，若没有video标签，需要等待load事件
+              // 才能确保所有资源加载完成
+              waitUntil: "load",
+            });
           }
         },
-        processMsg: "获取视频标题",
-        successMsg: "获取视频标题完成",
-        errorMsg: "未获取到视频标题",
-      })
+        processMsg: "校验网站视频是否存在",
+        successMsg: "校验网站视频结束",
+        errorMsg: "校验网站视频失败",
+      }),
     );
 
     return atomTasks;
   }
 
-  protected async createExtractTask(ctx: CrawlerTaskCtx) {
-    return new Task<CrawlerTaskCtx>(
+  protected createGetTitleAtomTask() {
+    return new AtomTask<CrawlerTaskCtx>({
+      exec: async ({ ctx }) => {
+        const page = ctx.get("page");
+        if (!page) {
+          throw new Error("页面未创建");
+        }
+        const videoInfo = ctx.get("videoInfo");
+        if (!videoInfo) {
+          throw new Error("视频信息未获取");
+        }
+        let videoTitle = "";
+        try {
+          videoTitle = await getVideoTitle(page);
+        } catch (e) {
+          logger.error(`获取视频标题失败 ${e}`);
+        }
+        let result = AtomTaskStatus.Failed;
+        if (videoTitle.length > 0) {
+          videoInfo.title = videoTitle;
+          result = AtomTaskStatus.Completed;
+        } else {
+          const pageTitle = await page.title();
+          videoInfo.title = `${replaceIllegalCharsInPath(pageTitle)}-${
+            this.id
+          }`;
+          result = AtomTaskStatus.Warning;
+        }
+        ctx.set("videoInfo", videoInfo);
+        return result;
+      },
+      processMsg: "获取视频标题",
+      successMsg: (ctx) => `获取视频标题完成:${ctx.get("videoInfo")?.title}`,
+      errorMsg: "未获取到视频标题",
+    });
+  }
+
+  protected async createExtractTask() {
+    const task = new Task<CrawlerTaskCtx>(
       { id: `Extract_${this.id}`, name: "提取视频信息" },
       {
-        ctx,
-      }
+        sharedCtx: this.ctx,
+      },
     );
+    this.ctx.bindTask(task);
+    return task;
   }
 
-  protected async createDownloadTask(ctx: CrawlerTaskCtx) {
-    return new Task<CrawlerTaskCtx>(
+  protected async createDownloadTask() {
+    const task = new Task<CrawlerTaskCtx>(
       { id: `Download_${this.id}`, name: "下载视频" },
       {
-        ctx,
-      }
+        sharedCtx: this.ctx,
+      },
     );
+    this.ctx.bindTask(task);
+    return task;
   }
 
-  protected async createConvertTask(ctx: CrawlerTaskCtx) {
+  protected async createConvertTask() {
     const convertTask = new Task<CrawlerTaskCtx>(
       { id: `Convert_${this.id}`, name: "转换视频" },
       {
-        ctx,
-      }
+        sharedCtx: this.ctx,
+      },
     );
+    this.ctx.bindTask(convertTask);
     convertTask.setAtomTasks([
       new AtomTask({
         exec: async ({ ctx }) => {
-          const videoName = replaceIllegalCharsInPath(ctx.videoInfo.title);
+          const videoInfo = ctx.get("videoInfo");
+          if (!videoInfo) {
+            throw new Error("视频信息未获取");
+          }
+          const videoName = replaceIllegalCharsInPath(videoInfo.title);
+          const outputFolder = ctx.get("outputFolder");
+          if (!outputFolder) {
+            throw new Error("输出文件夹未获取");
+          }
           const res = await runFFmpeg(
-            join(ctx.outputFolder, videoName, "index.m3u8"),
-            join(ctx.outputFolder, `${videoName}.${ctx.videoInfo.format}`),
+            join(outputFolder, videoName, "index.m3u8"),
+            join(outputFolder, `${videoName}.${videoInfo.format}`),
             {
               onProgress({ currentMilliseconds, totalMilliseconds }) {
                 const percent = formatPercent(
-                  (currentMilliseconds * 100) / totalMilliseconds
+                  (currentMilliseconds * 100) / totalMilliseconds,
                 );
 
                 convertTask.setTaskMsg("格式转换中");
                 convertTask.setPercent(percent);
               },
-            }
+            },
           );
           if (res) {
             convertTask.setTaskMsg("格式转换完成");
-            rimraf(join(ctx.outputFolder, videoName));
+            rimraf(join(outputFolder, videoName));
             const { size } = await stat(res.output);
-            ctx.videoInfo.size = size;
-            ctx.videoInfo.duration = res.totalMilliseconds;
+            videoInfo.size = size;
+            videoInfo.duration = res.totalMilliseconds;
+            ctx.set("videoInfo", videoInfo);
             runFFmpegScreenshot(
               res.output,
-              join(ctx.outputFolder, `${videoName}-screenshot.png`),
-              {}
+              join(outputFolder, `${videoName}-screenshot.png`),
+              {},
             ).then(({ output: screenshotOutput }) => {
-              this.eventEmitter.emit("success", ctx.videoInfo.id, {
-                videoInfo: ctx.videoInfo,
+              this.eventEmitter.emit("success", videoInfo.id, {
+                videoInfo: videoInfo,
                 output: res.output,
                 screenshot: screenshotOutput,
                 progressMessage: convertTask.taskMsg,
@@ -280,12 +346,12 @@ export class CrawlerTask {
         progressMessage: taskInfo.taskMsg,
       });
     });
-    task.event.on("error", async ({ error }) => {
+    task.event.on("error", async ({ taskInfo, error }) => {
       let screenshot = join(
-        this.ctx.outputFolder,
-        `${this.ctx.videoInfo.title}-screenshot.png`
+        taskInfo.state.outputFolder,
+        `${taskInfo.state.videoInfo.title}-screenshot.png`,
       );
-      await this.ctx.page?.screenshot({
+      await taskInfo.state.page?.screenshot({
         type: "png",
         path: screenshot,
       });
@@ -296,34 +362,30 @@ export class CrawlerTask {
     });
     task.start();
     await task.waitForEnd();
-    return task.getInfo().status === TaskStatus.Completed;
+    return task.getTaskInfo().status === TaskStatus.Completed;
   }
 
   async start() {
-    this.extractTask = await this.createExtractTask(this.ctx);
+    this.extractTask = await this.createExtractTask();
     const extractSuccess = await this.installTask(
       this.extractTask,
-      TaskStepEnum.Extract
+      TaskStepEnum.Extract,
     );
 
     if (extractSuccess) {
-      this.downloadTask = await this.createDownloadTask(
-        this.extractTask.getCtx()
-      );
+      this.downloadTask = await this.createDownloadTask();
       const downloadSuccess = await this.installTask(
         this.downloadTask,
-        TaskStepEnum.Download
+        TaskStepEnum.Download,
       );
 
       this.destroyPlaywright();
 
       if (downloadSuccess) {
-        this.convertTask = await this.createConvertTask(
-          this.downloadTask.getCtx()
-        );
+        this.convertTask = await this.createConvertTask();
         const convertSuccess = await this.installTask(
           this.convertTask,
-          TaskStepEnum.Convert
+          TaskStepEnum.Convert,
         );
         return convertSuccess;
       }
@@ -332,8 +394,9 @@ export class CrawlerTask {
   }
 
   async destroyPlaywright() {
-    await this.ctx.context?.close();
-    await this.ctx.browser?.close();
+    const state = this.extractTask?.getTaskInfo().state;
+    await state?.context?.close();
+    await state?.browser?.close();
   }
 
   destroy() {
@@ -346,7 +409,7 @@ export class CrawlerTask {
 
   getTasksInfo() {
     return [this.extractTask, this.downloadTask, this.convertTask]
-      .map((task) => task?.getInfo())
+      .map((task) => task?.getTaskInfo())
       .filter(Boolean);
   }
 }

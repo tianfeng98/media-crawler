@@ -1,7 +1,7 @@
 import { mkdir, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { isNumber } from "radashi";
-import { AtomTask, Task } from "task-runner-plus";
+import { AtomTask, AtomTaskStatus, Task } from "task-runner-plus";
 import { replaceIllegalCharsInPath } from "../common";
 import { parseM3u8 } from "../hls";
 import { CrawlerTask, CrawlerTaskCtx, CrawlerTaskOptions } from "./CrawlerTask";
@@ -12,46 +12,58 @@ export class CrawlerHLSTask extends CrawlerTask {
     super(websiteUrl, options);
   }
 
-  public async createExtractTask(ctx: CrawlerTaskCtx) {
+  public async createExtractTask() {
     const extractTask = new Task<CrawlerTaskCtx>(
-      { id: `Extract_${this.id}`, name: "提取视频信息" },
       {
-        ctx,
-      }
+        id: `Extract_${this.id}`,
+        name: "提取视频信息",
+      },
+      {
+        sharedCtx: this.ctx,
+      },
     );
-    ctx.logger.debug(["正在分析页面", this.websiteUrl]);
-    const webInitAtomTasks = await this.createWebInitAtomTask();
+    this.ctx.bindTask(extractTask);
+    const webInitAtomTasks = this.createWebInitAtomTask();
+    const getTitleAtomTask = this.createGetTitleAtomTask();
     const findResourceTask = new AtomTask<CrawlerTaskCtx>({
       exec: async ({ ctx, execCount }) => {
-        if (!ctx.page) {
+        const page = ctx.get("page");
+        if (!page) {
           throw new Error("页面未创建");
         }
-        ctx.logger.debug("正在获取m3u8内容");
+        const logger = ctx.get("logger");
+        logger?.debug("正在获取m3u8内容");
         if (execCount > 1) {
-          ctx.page.reload({
+          page.reload({
             timeout: this.browserTimeout,
             waitUntil: "domcontentloaded",
           });
         }
-        ctx.mediaResponse = await ctx.page.waitForResponse(
-          async (res) => {
-            const url = res.url();
-            const urlObj = new URL(url);
-            if (urlObj.pathname.endsWith(".m3u8")) {
-              // 非嵌套m3u8
-              const content = await res.text();
-              return !content.includes(".m3u8");
-            }
-            const contentType = res.headers()["content-type"];
-            if (["application/x-mpegurl"].includes(contentType)) {
-              const content = await res.text();
-              return content.startsWith("#EXT");
-            }
-            return false;
-          },
-          {
-            timeout: this.browserTimeout,
-          }
+        /**
+         * @TODO 等待流媒体的任务获取应当在进入页面后立即执行，等标题获取完之后该Response已结束。或者使用hash表记录Repsonse需要的时候再取。（建议改为hash表）
+         */
+        ctx.set(
+          "mediaResponse",
+          await page.waitForResponse(
+            async (res) => {
+              const url = res.url();
+              const urlObj = new URL(url);
+              if (urlObj.pathname.endsWith(".m3u8")) {
+                // 非嵌套m3u8
+                const content = await res.text();
+                return !content.includes(".m3u8");
+              }
+              const contentType = res.headers()["content-type"];
+              if (["application/x-mpegurl"].includes(contentType)) {
+                const content = await res.text();
+                return content.startsWith("#EXT");
+              }
+              return false;
+            },
+            {
+              timeout: this.browserTimeout,
+            },
+          ),
         );
       },
       processMsg: "正在获取m3u8内容",
@@ -62,35 +74,46 @@ export class CrawlerHLSTask extends CrawlerTask {
     extractTask.setAtomTasks([
       ...webInitAtomTasks,
       findResourceTask,
+      getTitleAtomTask,
       new AtomTask<CrawlerTaskCtx>({
         exec: async ({ ctx }) => {
-          if (!ctx.mediaResponse) {
+          const mediaResponse = ctx.get("mediaResponse");
+          const logger = ctx.get("logger");
+          if (!mediaResponse) {
             throw new Error("未获取媒体响应");
           }
-          const m3u8Url = ctx.mediaResponse.url();
-          const m3u8Content = await ctx.mediaResponse.text();
+          const outputFolder = ctx.get("outputFolder");
+          if (!outputFolder) {
+            throw new Error("输出文件夹未获取");
+          }
+          const videoInfo = ctx.get("videoInfo");
+          if (!videoInfo) {
+            throw new Error("视频信息未获取");
+          }
+          const m3u8Url = mediaResponse.url();
+          const m3u8Content = await mediaResponse.text();
 
-          ctx.logger.debug("获取m3u8内容成功, 开始写入 index.m3u8 文件");
+          logger?.debug("获取m3u8内容成功, 开始写入 index.m3u8 文件");
 
-          const {
-            downloadItems,
-            keyDownloadItem,
-            localM3u8FileContent,
-          } = parseM3u8(m3u8Url, m3u8Content);
+          const { downloadItems, keyDownloadItem, localM3u8FileContent } =
+            parseM3u8(m3u8Url, m3u8Content);
 
-          ctx.downloadItems = [...downloadItems];
+          const items = [...downloadItems];
+
           if (keyDownloadItem) {
-            ctx.downloadItems.unshift(keyDownloadItem);
+            items.unshift(keyDownloadItem);
           }
 
+          ctx.set("downloadItems", items);
+
           const videoDir = join(
-            ctx.outputFolder,
-            replaceIllegalCharsInPath(ctx.videoInfo.title)
+            outputFolder,
+            replaceIllegalCharsInPath(videoInfo.title),
           );
           await mkdir(videoDir, { recursive: true });
           await writeFile(join(videoDir, "index.m3u8"), localM3u8FileContent);
 
-          ctx.logger.debug([
+          logger?.debug([
             "index.m3u8 文件写入完成",
             join(videoDir, "index.m3u8"),
           ]);
@@ -104,41 +127,52 @@ export class CrawlerHLSTask extends CrawlerTask {
     return extractTask;
   }
 
-  public async createDownloadTask(ctx: CrawlerTaskCtx) {
+  public async createDownloadTask() {
     const hlsConcurrency = Number(process.env.CRAWLER_HLS_CONCURRENCY);
     const concurrency = isNumber(hlsConcurrency) ? hlsConcurrency : 5;
-    ctx.logger.debug(["开始下载HLS分片, 并发下载数", concurrency]);
     const downloadTask = new Task<CrawlerTaskCtx>(
       { id: `Download_${this.id}`, name: "下载视频" },
       {
-        ctx,
+        sharedCtx: this.ctx,
         concurrency,
-      }
+      },
     );
+    this.ctx.bindTask(downloadTask);
     const inspectTask = new AtomTask<CrawlerTaskCtx>({
       exec: async ({ ctx }) => {
-        if (!ctx.downloadItems || ctx.downloadItems.length === 0) {
-          ctx.logger.error(["未获取下载项"]);
+        const downloadItems = ctx.get("downloadItems");
+        const logger = ctx.get("logger");
+        if (!downloadItems || downloadItems.length === 0) {
           throw new Error("未获取下载项");
         }
-        ctx.logger.debug(["下载项", ctx.downloadItems.length]);
-        const atomTasks = ctx.downloadItems.map<AtomTask<CrawlerTaskCtx>>(
+        logger?.debug(["下载项", downloadItems.length]);
+        const atomTasks = downloadItems.map<AtomTask<CrawlerTaskCtx>>(
           (item) => {
             const { filename, type } = item;
             if (type === "key") {
               return new AtomTask<CrawlerTaskCtx>({
-                exec: async ({ ctx, execCount }) => {
-                  if (!ctx.page) {
+                exec: async ({ ctx: _ctx, execCount }) => {
+                  const page = _ctx.get("page");
+                  const _logger = _ctx.get("logger");
+                  if (!page) {
                     throw new Error("页面未创建");
                   }
+                  const outputFolder = _ctx.get("outputFolder");
+                  if (!outputFolder) {
+                    throw new Error("输出文件夹未获取");
+                  }
+                  const videoInfo = _ctx.get("videoInfo");
+                  if (!videoInfo) {
+                    throw new Error("视频信息未获取");
+                  }
                   if (execCount > 1) {
-                    ctx.page.reload({
+                    page.reload({
                       timeout: this.browserTimeout,
                       waitUntil: "domcontentloaded",
                     });
                   }
-                  ctx.logger.debug(["开始写入key文件", filename]);
-                  const keyResponse = await ctx.page.waitForResponse(
+                  _logger?.debug(["开始写入key文件", filename]);
+                  const keyResponse = await page.waitForResponse(
                     async (res) => {
                       const url = res.url();
                       const urlObj = new URL(url);
@@ -146,16 +180,16 @@ export class CrawlerHLSTask extends CrawlerTask {
                     },
                     {
                       timeout: this.browserTimeout,
-                    }
+                    },
                   );
                   const body = await keyResponse.body();
                   await writeFile(
                     join(
-                      ctx.outputFolder,
-                      replaceIllegalCharsInPath(ctx.videoInfo.title),
-                      replaceIllegalCharsInPath(filename)
+                      outputFolder,
+                      replaceIllegalCharsInPath(videoInfo.title),
+                      replaceIllegalCharsInPath(filename),
                     ),
-                    body
+                    body,
                   );
                 },
                 processMsg: "正在写入key文件",
@@ -165,17 +199,30 @@ export class CrawlerHLSTask extends CrawlerTask {
             }
             return new AtomTask(
               {
-                exec: () => {
-                  if (!ctx.page) {
+                exec: async ({ ctx: _ctx }) => {
+                  const page = _ctx.get("page");
+                  const _logger = _ctx.get("logger");
+                  if (!page) {
                     throw new Error("页面未创建");
                   }
-                  return downloadItem(item, {
+                  const outputFolder = _ctx.get("outputFolder");
+                  if (!outputFolder) {
+                    throw new Error("输出文件夹未获取");
+                  }
+                  const videoInfo = _ctx.get("videoInfo");
+                  if (!videoInfo) {
+                    throw new Error("视频信息未获取");
+                  }
+                  const downloadRes = await downloadItem(item, {
                     videoDir: join(
-                      ctx.outputFolder,
-                      replaceIllegalCharsInPath(ctx.videoInfo.title)
+                      outputFolder,
+                      replaceIllegalCharsInPath(videoInfo.title),
                     ),
-                    page: ctx.page,
+                    page,
                   });
+                  return downloadRes
+                    ? AtomTaskStatus.Completed
+                    : AtomTaskStatus.Failed;
                 },
                 processMsg: `下载分片 ${item.filename}`,
                 successMsg: `分片 ${item.filename} 下载完成`,
@@ -183,11 +230,11 @@ export class CrawlerHLSTask extends CrawlerTask {
               },
               {
                 retryTimes: 3,
-              }
+              },
             );
-          }
+          },
         );
-        ctx.addAtomTasks(atomTasks);
+        ctx.addAtomTasks?.(atomTasks);
       },
       processMsg: "检查下载项",
       successMsg: "检查下载项成功",

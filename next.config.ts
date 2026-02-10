@@ -41,9 +41,9 @@ const nextConfig: NextConfig = {
   },
   serverExternalPackages: ["@ffmpeg-installer/ffmpeg", "fluent-ffmpeg"],
   allowedDevOrigins: [
-    "localhost:3000",
-    "127.0.0.1:3000",
-    ...getIPAdressList().map((ip) => `${ip}:3000`),
+    "localhost",
+    "127.0.0.1",
+    ...getIPAdressList().map((ip) => ip),
   ],
 };
 

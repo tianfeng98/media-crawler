@@ -5,7 +5,7 @@ export const logger = {
   },
   debug: (message: any | any[], options?: { verbose?: boolean }) => {
     const arr = Array.isArray(message) ? message : [message];
-    if (options?.verbose || process.env.NODE_ENV === "development") {
+    if (options?.verbose || process.env.LOG_LEVEL === "debug") {
       console.log(...arr);
     }
   },

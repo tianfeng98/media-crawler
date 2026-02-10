@@ -3,7 +3,7 @@ import { downloadEventEmitter } from "./event";
 import { logger } from "./logger";
 import { storeScreenshot, storeVideoFile, taskStorage } from "./storage";
 
-// 监听下载进度事件
+// 监听进度事件
 downloadEventEmitter.on(
   "progress",
   async (taskId: string, { percent, step, progressMessage }) => {
@@ -15,7 +15,7 @@ downloadEventEmitter.on(
       });
       logger.debug(`任务进度更新: ${taskId} - ${step} ${percent}%`);
     }
-  }
+  },
 );
 
 // 监听下载成功事件
@@ -23,7 +23,7 @@ downloadEventEmitter.on(
   "success",
   async (
     taskId: string,
-    { videoInfo, output, progressMessage, screenshot }
+    { videoInfo, output, progressMessage, screenshot },
   ) => {
     // 存储视频文件信息
     storeVideoFile({
@@ -43,7 +43,7 @@ downloadEventEmitter.on(
       },
       videoInfo,
     });
-  }
+  },
 );
 
 // 监听下载错误事件
@@ -59,7 +59,7 @@ downloadEventEmitter.on(
       });
       logger.error(`任务失败: ${taskId} - ${error}`);
     }
-  }
+  },
 );
 
 /**
@@ -69,7 +69,7 @@ downloadEventEmitter.on(
  */
 export async function createTask(
   taskId: string,
-  taskStatus: TaskStatus
+  taskStatus: TaskStatus,
 ): Promise<void> {
   await taskStorage.set(taskId, taskStatus);
   logger.debug(`任务已创建: ${taskId}`, {
@@ -83,7 +83,7 @@ export async function createTask(
  * @returns 任务状态或null
  */
 export async function getTaskStatus(
-  taskId: string
+  taskId: string,
 ): Promise<TaskStatus | null | undefined> {
   return taskStorage.get(taskId);
 }
@@ -95,15 +95,13 @@ export async function getTaskStatus(
  */
 export async function updateTaskStatus(
   taskId: string,
-  updates: Partial<TaskStatus>
+  updates: Partial<TaskStatus>,
 ): Promise<void> {
   const taskStatus = await taskStorage.get(taskId);
   if (taskStatus) {
     Object.assign(taskStatus, updates);
     await taskStorage.set(taskId, taskStatus);
-    logger.debug(`任务状态已更新: ${taskId}`, {
-      verbose: true,
-    });
+    logger.debug(`任务状态已更新: ${taskId}`);
   }
 }
 
