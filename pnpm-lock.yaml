@@ -66,7 +66,7 @@ dependencies:
     specifier: ^1.0.1
     version: 1.0.1
   playwright:
-    specifier: ^1.58.1
+    specifier: ^1.56.0
     version: 1.58.1
   radashi:
     specifier: ^12.7.1
