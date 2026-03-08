@@ -27,19 +27,24 @@ export const instruct = async (
     timeout: 60 * 1000,
   });
 
-  logger.debug(["LLM request", messages], { verbose: true });
+  try {
+    const response = await openai.chat.completions.create({
+      model: MODEL_NAME,
+      messages,
+    });
 
-  const response = await openai.chat.completions.create({
-    model: MODEL_NAME,
-    messages,
-  });
+    const result = response?.choices.at(0)?.message.content || "";
 
-  logger.debug(["LLM response", response], { verbose: true });
-
-  const result = response?.choices.at(0)?.message.content || "";
-
-  return {
-    success: true,
-    message: result,
-  };
+    return {
+      success: true,
+      message: result,
+    };
+  } catch (e) {
+    logger.error(`LLM响应失败 ${e}`);
+    return {
+      success: false,
+      errorMsg: (e as Error).message,
+      message: "",
+    };
+  }
 };

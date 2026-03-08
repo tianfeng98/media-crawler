@@ -1,4 +1,5 @@
 import { DownloadItem } from "@/lib/types";
+import { jsonrepair } from "jsonrepair";
 import markdownit from "markdown-it";
 import { existsSync } from "node:fs";
 import { join } from "node:path";
@@ -60,7 +61,7 @@ export const getVideoTitle = async (page: Page): Promise<string> => {
 - 不要添加任何解释、前缀或后缀。
 - 如果标题未在 HTML 中明确出现，请返回 ""，不要根据上下文推测。
 
-请以严格的 JSON 格式输出，仅包含一个字段 "title"。
+请以严格的 JSON 格式输出，仅包含一个字段 "title"。不要添加任何其他文本，包括原因分析、解释等。
 
 HTML 内容如下：
 ${html}
@@ -75,7 +76,7 @@ ${html}
 
   const { success, errorMsg, message: llmResult } = await instruct(messages);
   if (!success) {
-    logger.error(`LLM解析视频标题失败 ${errorMsg}`);
+    logger.error(`LLM获取视频标题失败 ${errorMsg}`);
     return "";
   }
   const jsonStr = /```json(.*?)```/s.test(llmResult)
@@ -84,14 +85,18 @@ ${html}
         .find((item) => item.tag === "code" && item.info === "json")?.content ||
       llmResult
     : llmResult;
+
   logger.debug(`LLM解析视频标题结果 ${jsonStr}`, {
     verbose: true,
   });
   try {
-    const data = JSON.parse(jsonStr);
+    const data = JSON.parse(jsonrepair(jsonStr));
     return data.title.toString().trim() || "";
   } catch (error) {
-    logger.error(`LLM解析视频标题失败 ${error}`);
+    logger.debug(["LLMResult", llmResult], {
+      verbose: true,
+    });
+    logger.error(`LLM解析标题JSON失败 ${error}`);
     return "";
   }
 };

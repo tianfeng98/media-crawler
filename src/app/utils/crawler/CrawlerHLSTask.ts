@@ -39,9 +39,6 @@ export class CrawlerHLSTask extends CrawlerTask {
             waitUntil: "domcontentloaded",
           });
         }
-        /**
-         * @TODO 等待流媒体的任务获取应当在进入页面后立即执行，等标题获取完之后该Response已结束。或者使用hash表记录Repsonse需要的时候再取。（建议改为hash表）
-         */
         ctx.set(
           "mediaResponse",
           await page.waitForResponse(

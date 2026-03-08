@@ -2,7 +2,7 @@
 
 [中文版本](README.md) | [English Version](README.en.md)
 
-An intelligent video downloader based on Next.js, supporting video extraction, download, and conversion from web pages.
+An intelligent video downloader based on `Next.js` and `Playwright`, supporting video extraction, download, and conversion from web pages.
 
 ## Features
 

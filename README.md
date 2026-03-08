@@ -2,7 +2,7 @@
 
 [中文版本](README.md) | [English Version](README.en.md)
 
-一个基于 Next.js 的智能视频下载器，支持从网页中提取、下载和转换视频文件。
+一个基于 `Next.js` 和 `Playwright` 的智能视频下载器，支持从网页中提取、下载和转换视频文件。
 
 ## 功能特性
 

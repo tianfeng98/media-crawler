@@ -44,7 +44,7 @@ export interface FFmpegOptions {
 export const runFFmpeg = async (
   input: string,
   output: string,
-  { userAgent, threads, headers, verbose, onProgress }: FFmpegOptions = {}
+  { userAgent, threads, headers, verbose, onProgress }: FFmpegOptions = {},
 ) => {
   // 动态导入FFmpeg安装器
   const ffmpegInstall = await import("@ffmpeg-installer/ffmpeg");
@@ -69,7 +69,7 @@ export const runFFmpeg = async (
         "-headers",
         Object.entries(headers)
           .map(([key, value]) => `${key}: ${value}`)
-          .join("$'\r\n'")
+          .join("$'\r\n'"),
       );
     }
     command
@@ -77,16 +77,22 @@ export const runFFmpeg = async (
         "-allowed_extensions",
         "ALL",
         "-protocol_whitelist",
-        "file,http,https,tls,tcp,crypto"
+        "file,http,https,tls,tcp,crypto",
       )
-      .outputOptions("-c", "copy")
+      .outputOptions([
+        "-c:v libx264", // 使用 H.264 (AVC) 编码器
+        "-crf 17", // 视觉无损范围 (0-51，越小质量越高，0为绝对无损)
+        "-preset slow", // 慢速预设可以获得更好的压缩率
+        "-pix_fmt yuv420p", // 提高兼容性，确保大多数播放器能打开
+        "-c:a copy", // 音频流直接拷贝，不重编码以保持原始音质
+      ])
       .output(output)
-      .on("start", function(commandLine) {
+      .on("start", function (commandLine) {
         logger.debug("Spawned FFmpeg with command: " + commandLine, {
           verbose,
         });
       })
-      .on("progress", function(progress) {
+      .on("progress", function (progress) {
         const currentMilliseconds = formatDurationStr(progress.timemark);
         if (totalMilliseconds && totalMilliseconds > 0) {
           onProgress?.({
@@ -97,10 +103,10 @@ export const runFFmpeg = async (
           });
         }
       })
-      .on("codecData", function(data) {
+      .on("codecData", function (data) {
         totalMilliseconds = formatDurationStr(data.duration);
       })
-      .on("end", function() {
+      .on("end", function () {
         const finishInfo: FFmpegProgressInfo = {
           input,
           output,
@@ -110,7 +116,7 @@ export const runFFmpeg = async (
         onProgress?.(finishInfo);
         resolve(finishInfo);
       })
-      .on("error", function(err) {
+      .on("error", function (err) {
         reject(err);
       })
       .run();
@@ -120,7 +126,7 @@ export const runFFmpeg = async (
 export const runFFmpegScreenshot = async (
   input: string,
   output: string,
-  { verbose }: FFmpegOptions = {}
+  { verbose }: FFmpegOptions = {},
 ) => {
   const ffmpegInstall = await import("@ffmpeg-installer/ffmpeg");
   Ffmpeg.setFfmpegPath(ffmpegInstall.path);
@@ -131,12 +137,12 @@ export const runFFmpegScreenshot = async (
       .outputOptions("-ss", "4.500")
       .outputOptions("-vframes", "1")
       .output(output)
-      .on("start", function(commandLine) {
+      .on("start", function (commandLine) {
         logger.debug("Spawned FFmpeg with command: " + commandLine, {
           verbose,
         });
       })
-      .on("end", function() {
+      .on("end", function () {
         resolve({
           input,
           output,
@@ -144,7 +150,7 @@ export const runFFmpegScreenshot = async (
           totalMilliseconds: 0,
         });
       })
-      .on("error", function(err) {
+      .on("error", function (err) {
         reject(err);
       })
       .run();
