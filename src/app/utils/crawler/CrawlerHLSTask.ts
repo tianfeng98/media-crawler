@@ -198,7 +198,6 @@ export class CrawlerHLSTask extends CrawlerTask {
               {
                 exec: async ({ ctx: _ctx }) => {
                   const page = _ctx.get("page");
-                  const _logger = _ctx.get("logger");
                   if (!page) {
                     throw new Error("页面未创建");
                   }

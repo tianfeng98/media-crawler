@@ -1,6 +1,6 @@
 {
   "name": "media-crawler",
-  "version": "0.1.6",
+  "version": "0.1.7",
   "description": "基于 Next.js 的智能视频下载器，支持从网页中提取、下载和转换视频文件",
   "author": "linktodream@163.com",
   "license": "MIT",
@@ -36,6 +36,7 @@
   },
   "dependencies": {
     "@ffmpeg-installer/ffmpeg": "^1.1.0",
+    "@ffprobe-installer/ffprobe": "^2.1.2",
     "@keyv/redis": "^5.1.6",
     "@radix-ui/react-dropdown-menu": "^2.1.16",
     "@radix-ui/react-progress": "^1.1.8",

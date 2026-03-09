@@ -16,6 +16,7 @@ An intelligent video downloader based on `Next.js` and `Playwright`, supporting 
 - 🗂️ File management and automatic cleanup
 - 📱 Support for custom device types
 - 📝 Support for custom video filenames
+- 🔧 Support for resuming downloads
 
 ## Environment Variables
 

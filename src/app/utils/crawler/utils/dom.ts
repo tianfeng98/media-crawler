@@ -27,7 +27,6 @@ export const getPageTitleInDom = () => {
     "uni-modal",
     "uni-tabbar",
     "uni-actionsheet",
-    "uni-scroll-view",
   ];
   const whitelistTags = [
     // 视频相关标签
@@ -219,7 +218,7 @@ export const getPageTitleInDom = () => {
     normalizeTextContent(bodyClone); // 4. 规范化文本内容
     removeEmptyTags(bodyClone); // 5. 移除无意义的空标签，跳过白名单
 
-    return bodyClone.innerHTML;
+    return bodyClone.innerHTML.replace(/\s+/g, " ");
   }
 
   /**

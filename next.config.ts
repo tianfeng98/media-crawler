@@ -30,6 +30,7 @@ const nextConfig: NextConfig = {
     resolveAlias: {
       // 确保FFmpeg安装器被正确解析
       "@ffmpeg-installer/ffmpeg": "@ffmpeg-installer/ffmpeg",
+      "@ffprobe-installer/ffmpeg": "@ffprobe-installer/ffprobe",
     },
     rules: {
       // 处理.node文件
@@ -39,7 +40,11 @@ const nextConfig: NextConfig = {
       },
     },
   },
-  serverExternalPackages: ["@ffmpeg-installer/ffmpeg", "fluent-ffmpeg"],
+  serverExternalPackages: [
+    "@ffmpeg-installer/ffmpeg",
+    "@ffprobe-installer/ffprobe",
+    "fluent-ffmpeg",
+  ],
   allowedDevOrigins: [
     "localhost",
     "127.0.0.1",
