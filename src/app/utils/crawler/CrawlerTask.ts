@@ -95,10 +95,14 @@ export class CrawlerTask {
       defaultData: {
         logger,
         videoInfo: {
+          name: "",
           id: this.id,
           title: this.id,
           duration: 0,
           size: 0,
+          type: "",
+          hash: "",
+          lastModified: Date.now(),
           format: process.env.VIDEO_FORMAT ?? "mp4",
         },
         outputFolder:

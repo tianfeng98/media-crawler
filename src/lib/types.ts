@@ -2,8 +2,12 @@ export interface VideoInfo {
   id: string;
   title: string;
   duration: number; // 毫秒
-  size: number; // 字节
   format: string;
+  name: string;
+  size: number;
+  type: string;
+  lastModified: number;
+  hash: string; // xxhash-addon
 }
 
 export interface VideoFileInfo {

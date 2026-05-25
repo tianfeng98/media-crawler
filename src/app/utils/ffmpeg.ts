@@ -210,9 +210,3 @@ export const runFFmpegScreenshot = async (
       .run();
   });
 };
-
-getVideoCodec(
-  "/Users/tangtianfeng/Downloads/videos/output/小马拉大车最萌身高差白丝大长腿洋马站着够不到逼半蹲着后入翘起屁股猛怼爆插骚穴/index.m3u8",
-)
-  .then((codec) => console.log(codec))
-  .catch((err) => console.error(err));
