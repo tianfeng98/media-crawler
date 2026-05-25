@@ -4,7 +4,11 @@ import { isNumber } from "radashi";
 import { AtomTask, AtomTaskStatus, Task } from "task-runner-plus";
 import { replaceIllegalCharsInPath } from "../common";
 import { parseM3u8 } from "../hls";
-import { CrawlerTask, CrawlerTaskCtx, CrawlerTaskOptions } from "./CrawlerTask";
+import {
+  CrawlerTask,
+  type CrawlerTaskCtx,
+  type CrawlerTaskOptions,
+} from "./CrawlerTask";
 import { downloadItem } from "./utils";
 
 export class CrawlerHLSTask extends CrawlerTask {
@@ -25,52 +29,9 @@ export class CrawlerHLSTask extends CrawlerTask {
     this.ctx.bindTask(extractTask);
     const webInitAtomTasks = this.createWebInitAtomTask();
     const getTitleAtomTask = this.createGetTitleAtomTask();
-    const findResourceTask = new AtomTask<CrawlerTaskCtx>({
-      exec: async ({ ctx, execCount }) => {
-        const page = ctx.get("page");
-        if (!page) {
-          throw new Error("页面未创建");
-        }
-        const logger = ctx.get("logger");
-        logger?.debug("正在获取m3u8内容");
-        if (execCount > 1) {
-          page.reload({
-            timeout: this.browserTimeout,
-            waitUntil: "domcontentloaded",
-          });
-        }
-        ctx.set(
-          "mediaResponse",
-          await page.waitForResponse(
-            async (res) => {
-              const url = res.url();
-              const urlObj = new URL(url);
-              if (urlObj.pathname.endsWith(".m3u8")) {
-                // 非嵌套m3u8
-                const content = await res.text();
-                return !content.includes(".m3u8");
-              }
-              const contentType = res.headers()["content-type"];
-              if (["application/x-mpegurl"].includes(contentType)) {
-                const content = await res.text();
-                return content.startsWith("#EXT");
-              }
-              return false;
-            },
-            {
-              timeout: this.browserTimeout,
-            },
-          ),
-        );
-      },
-      processMsg: "正在获取m3u8内容",
-      successMsg: "获取m3u8内容成功",
-      errorMsg: "获取m3u8内容失败",
-    });
 
     extractTask.setAtomTasks([
       ...webInitAtomTasks,
-      findResourceTask,
       getTitleAtomTask,
       new AtomTask<CrawlerTaskCtx>({
         exec: async ({ ctx }) => {
@@ -238,5 +199,32 @@ export class CrawlerHLSTask extends CrawlerTask {
     });
     downloadTask.setAtomTasks([inspectTask]);
     return downloadTask;
+  }
+
+  public async getResourceResponse() {
+    const page = this.ctx.get("page");
+    if (!page) {
+      throw new Error("页面未创建");
+    }
+    return page.waitForResponse(
+      async (res) => {
+        const url = res.url();
+        const urlObj = new URL(url);
+        if (urlObj.pathname.endsWith(".m3u8")) {
+          // 非嵌套m3u8
+          const content = await res.text();
+          return !content.includes(".m3u8");
+        }
+        const contentType = res.headers()["content-type"];
+        if (["application/x-mpegurl"].includes(contentType)) {
+          const content = await res.text();
+          return content.startsWith("#EXT");
+        }
+        return false;
+      },
+      {
+        timeout: this.browserTimeout,
+      },
+    );
   }
 }

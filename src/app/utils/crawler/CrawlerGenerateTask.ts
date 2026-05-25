@@ -19,38 +19,8 @@ export class CrawlerGenerateTask extends CrawlerTask {
     this.ctx.bindTask(extractTask);
 
     const webInitAtomTasks = await this.createWebInitAtomTask();
-    const findResourceTask = new AtomTask<CrawlerTaskCtx>({
-      exec: async ({ ctx, execCount }) => {
-        const page = ctx.get("page");
-        if (!page) {
-          throw new Error("页面未创建");
-        }
-        if (execCount > 1) {
-          page.reload({
-            timeout: this.browserTimeout,
-            waitUntil: "domcontentloaded",
-          });
-        }
 
-        ctx.set(
-          "mediaResponse",
-          await page.waitForResponse(
-            async (res) => {
-              const contentType = res.headers()["content-type"];
-              return (
-                contentType.startsWith("video/") ||
-                contentType.startsWith("audio/")
-              );
-            },
-            {
-              timeout: this.browserTimeout,
-            },
-          ),
-        );
-      },
-    });
-
-    extractTask.setAtomTasks([...webInitAtomTasks, findResourceTask]);
+    extractTask.setAtomTasks(webInitAtomTasks);
 
     return extractTask;
   }
@@ -88,5 +58,23 @@ export class CrawlerGenerateTask extends CrawlerTask {
     ]);
 
     return downloadTask;
+  }
+
+  public async getResourceResponse() {
+    const page = this.ctx.get("page");
+    if (!page) {
+      throw new Error("页面未创建");
+    }
+    return page.waitForResponse(
+      async (res) => {
+        const contentType = res.headers()["content-type"];
+        return (
+          contentType.startsWith("video/") || contentType.startsWith("audio/")
+        );
+      },
+      {
+        timeout: this.browserTimeout,
+      },
+    );
   }
 }

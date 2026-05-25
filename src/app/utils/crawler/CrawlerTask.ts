@@ -36,6 +36,7 @@ export interface CrawlerTaskCtx {
   mediaResponse?: PlaywrightResponse;
   logger: typeof logger;
   downloadItems: DownloadItem[];
+  [T: string]: any;
 }
 
 export interface CrawlerTaskOptions {
@@ -132,7 +133,7 @@ export class CrawlerTask {
       new AtomTask({
         exec: async ({ ctx }) => {
           const browser = PLAYWRIGHT_SERVER_ENDPOINT
-            ? await webkit.connect(`ws://${PLAYWRIGHT_SERVER_ENDPOINT}`, {
+            ? await webkit.connect(PLAYWRIGHT_SERVER_ENDPOINT, {
                 timeout,
               })
             : await chromium.launch({
@@ -172,6 +173,15 @@ export class CrawlerTask {
       }),
       new AtomTask({
         exec: async ({ ctx }) => {
+          const resourceResponsePromise = this.getResourceResponse();
+          ctx.set("resourceResponsePromise", resourceResponsePromise);
+        },
+        processMsg: "指定资源监听",
+        successMsg: "资源监听成功",
+        errorMsg: "资源监听失败",
+      }),
+      new AtomTask({
+        exec: async ({ ctx }) => {
           const page = ctx.get("page");
           if (!page) {
             throw new Error("页面未创建");
@@ -184,6 +194,19 @@ export class CrawlerTask {
         processMsg: "访问网站",
         successMsg: "访问网站成功",
         errorMsg: "访问网站失败",
+      }),
+      new AtomTask({
+        exec: async ({ ctx }) => {
+          const resourceResponsePromise: Promise<
+            PlaywrightResponse | undefined
+          > = ctx.get("resourceResponsePromise");
+          if (resourceResponsePromise) {
+            ctx.set("mediaResponse", await resourceResponsePromise);
+          }
+        },
+        processMsg: "获取媒体资源",
+        successMsg: "获取媒体资源成功",
+        errorMsg: "获取媒体资源失败",
       }),
       new AtomTask({
         exec: async ({ ctx }) => {
@@ -333,6 +356,12 @@ export class CrawlerTask {
     ]);
 
     return convertTask;
+  }
+
+  protected async getResourceResponse(): Promise<
+    PlaywrightResponse | undefined
+  > {
+    return;
   }
 
   private async installTask(task: Task<CrawlerTaskCtx>, step: TaskStepEnum) {
